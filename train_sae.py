@@ -1,58 +1,47 @@
 #!/usr/bin/env python3
-\"\"\"Train a minimal sparse autoencoder on synthetic protein sequences.\"\"\"
-import json
-import random
+\"\"\"Train a sparse autoencoder on activations (L1 sparsity on latent) to learn pseudo-dictionary features.\"\"\"
 import numpy as np
+from pathlib import Path
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from pathlib import Path
-from utils.data_utils import generate_synthetic_dataset, one_hot_encode, save_fasta
-from utils.model_utils import SparseAutoencoder, train_autoencoder
+from torch.utils.data import DataLoader, TensorDataset
+from utils.model_utils import SparseAutoencoderSAE
+import json
 
 OUT = Path("outputs")
 OUT.mkdir(exist_ok=True)
 
+def train(model, X, epochs=50, batch_size=128, lr=1e-3, sparsity_coef=1e-3):
+    device = torch.device("cpu")
+    model.to(device)
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    mse = nn.MSELoss()
+    ds = TensorDataset(torch.from_numpy(X.astype('float32')))
+    dl = DataLoader(ds, batch_size=batch_size, shuffle=True)
+    for ep in range(1, epochs+1):
+        total = 0.0
+        for (xb,) in dl:
+            xb = xb.to(device)
+            opt.zero_grad()
+            recon, z = model(xb)
+            loss_recon = mse(recon, xb)
+            loss_sparse = sparsity_coef * torch.mean(torch.abs(z))
+            loss = loss_recon + loss_sparse
+            loss.backward()
+            opt.step()
+            total += loss.item() * xb.size(0)
+        if ep % 10 == 0 or ep==1:
+            print(f"Epoch {ep}/{epochs} avg_loss={total/len(X):.6f}")
+    # save
+    torch.save(model.state_dict(), OUT / "sae_activations_model.pt")
+    with open(OUT / "sae_config.json", "w") as f:
+        json.dump({"latent_dim": model.latent_dim, "input_dim": model.input_dim}, f)
+    print("Saved model and config")
+
 def main():
-    # config (minimal)
-    cfg = {
-        "n_sequences": 500,
-        "seq_len": 50,
-        "alphabet": "ACDEFGHIKLMNPQRSTVWY",
-        "latent_dim": 16,
-        "batch_size": 64,
-        "epochs": 40,
-        "lr": 1e-3,
-        "sparsity_coef": 1e-3,
-        "device": "cpu"
-    }
-    np.random.seed(0)
-    torch.manual_seed(0)
-    random.seed(0)
-
-    # Generate synthetic sequences and a simple synthetic label (sum of motif counts)
-    seqs, ids = generate_synthetic_dataset(cfg["n_sequences"], cfg["seq_len"], cfg["alphabet"], motif="C")
-    # motif 'C' count used as a dummy label (for surrogate training later)
-    labels = np.array([s.count("C") for s in seqs], dtype=float)
-
-    X = one_hot_encode(seqs, cfg["alphabet"])
-    X = X.astype(np.float32)
-
-    # Train SAE
-    model = SparseAutoencoder(input_dim=X.shape[1], latent_dim=cfg["latent_dim"])
-    device = torch.device(cfg["device"])
-    train_autoencoder(model, X, device=device, epochs=cfg["epochs"], batch_size=cfg["batch_size"],
-                      lr=cfg["lr"], sparsity_coef=cfg["sparsity_coef"], out_dir=OUT)
-
-    # Save examples and labels for downstream scripts
-    np.save(OUT / "sequences.npy", np.array(seqs))
-    np.save(OUT / "ids.npy", np.array(ids))
-    np.save(OUT / "labels.npy", labels)
-    save_fasta(seqs, ids, OUT / "sequences.fasta")
-
-    # Save config
-    with open(OUT / "config.json", "w") as f:
-        json.dump(cfg, f, indent=2)
+    acts = np.load(OUT / "activations.npy")
+    model = SparseAutoencoderSAE(input_dim=acts.shape[1], latent_dim=64, hidden=512)
+    train(model, acts, epochs=60, batch_size=128, lr=1e-3, sparsity_coef=1e-3)
 
 if __name__ == '__main__':
     main()
