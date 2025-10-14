@@ -1,0 +1,9 @@
+# Outputs and checkpoints
+outputs/
+*.pt
+*.npy
+*.json
+*.pdf
+*.png
+*.ckpt
+utils/__pycache__/

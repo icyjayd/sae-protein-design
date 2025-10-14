@@ -1,0 +1,3 @@
+[submodule "interplm"]
+	path = interplm
+	url = https://github.com/ElanaPearl/interPLM.git

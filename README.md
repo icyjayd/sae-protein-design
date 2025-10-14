@@ -1,22 +1,21 @@
-# SAE on Model Activations (Anthropic-style pseudo-dictionary learning)
 
-Minimal runnable codebase that demonstrates:
-- Generating synthetic "model activations" using a small transformer-like encoder (to simulate activations from a larger model).
-- Training a Sparse Autoencoder (SAE) on those activations with an L1 sparsity penalty to learn monosemantic / dictionary-like features.
-- Extracting atoms (decoder basis) and sparse codes (latent activations) for analysis.
+# SAE Protein Design — HF + GPU + Finetune + Presets
 
-Run quickstart:
+## Quick start
+```bash
+pip install -r requirements.txt
+
+# Toy run
+python generate_activations.py
+python run_pipeline.py --mode both --retrain
+
+# Use pretrained InterPLM SAE (auto-installs interplm). Layer defaults via preset.
+python run_pipeline.py --from_hf_model esm2-8m
+
+# Fine-tune pretrained SAE; freeze decoder; small LR on frozen; 10 epochs
+python run_pipeline.py --from_hf_model esm2-8m --layer 4 --finetune --freeze decoder --lr-mult 0.1 --epochs 10
+
+# List available pretrained presets
+python run_pipeline.py --list-hf-presets
 ```
-python generate_activations.py        # create synthetic activations (or replace with real activations.npy)
-python train_sae.py                   # train SAE on activations and save model + outputs
-python extract_codes.py               # get sparse codes and atoms (pseudo-dictionary)
-python visualize.py                   # quick visualization (PCA + atom heatmap)
-```
-
-Requirements:
-- Python 3.8+
-- PyTorch, numpy, scikit-learn, matplotlib
-
-Notes:
-- If you have real model activations, save them as `outputs/activations.npy` (shape N x D) and skip `generate_activations.py`.
-- This is a minimal educational skeleton; extend with your real model hooks and AlphaFold/FoldX evaluations as needed.
+Outputs appear in ./outputs (named checkpoints/configs, metrics, and `pipeline_report.pdf`).

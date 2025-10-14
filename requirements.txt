@@ -1,0 +1,12 @@
+
+numpy
+scipy
+scikit-learn
+matplotlib
+tqdm
+transformers
+torch
+h5py        # for InterPLM pretrained SAE loading
+pandas
+einops
+# interplm will auto-install if --from_hf_model is used

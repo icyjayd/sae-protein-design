@@ -1,35 +1,69 @@
 #!/usr/bin/env python3
-\"\"\"Encode activations with trained SAE, save latent codes and optionally perform L1-based thresholding to get sparse codes.\"\"\"
-import numpy as np
+import argparse, numpy as np, torch
 from pathlib import Path
-import torch
-from utils.model_utils import SparseAutoencoderSAE
+from utils.model_utils import SparseAutoencoderSAE, MonosemanticSAE
+import matplotlib.pyplot as plt
+
 OUT = Path("outputs")
 
 def main():
-    acts = np.load(OUT / "activations.npy")
-    import json
-    cfg = json.load(open(OUT / "sae_config.json"))
-    model = SparseAutoencoderSAE(input_dim=acts.shape[1], latent_dim=cfg.get("latent_dim", 64), hidden=512)
-    model.load_state_dict(torch.load(OUT / "sae_activations_model.pt", map_location="cpu"))
-    model.eval()
-    with torch.no_grad():
-        zs = model.encode(torch.from_numpy(acts.astype('float32'))).numpy()
-    # simple sparsification: threshold small values to zero to mimic monosemantic activations
-    thresh = np.percentile(np.abs(zs), 70)
-    sparse_codes = zs * (np.abs(zs) >= thresh)
-    np.save(OUT / "sparse_codes.npy", sparse_codes)
-    # treat decoder columns as "atoms" by passing unit vectors through decoder
-    atoms = []
-    for i in range(model.latent_dim):
-        unit = torch.zeros((1, model.latent_dim))
-        unit[0, i] = 1.0
-        with torch.no_grad():
-            atom = model.decode(unit).numpy().squeeze(0)
-        atoms.append(atom)
-    atoms = np.stack(atoms)
-    np.save(OUT / "sae_atoms.npy", atoms)
-    print("Saved sparse_codes.npy and sae_atoms.npy with shapes", sparse_codes.shape, atoms.shape)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--mode", choices=["regular", "monosemantic", "both"], default="both")
+    ap.add_argument("--threshold-pct", type=float, default=70)
+    args = ap.parse_args()
 
-if __name__ == '__main__':
+    acts = np.load(OUT / "activations.npy")
+    acts = torch.tensor(acts, dtype=torch.float32)
+
+    if args.mode in ("regular", "both"):
+        model = SparseAutoencoderSAE(acts.shape[1], 64, 512)
+        model.load_state_dict(torch.load(OUT / "sae_regular.pt", map_location="cpu"), strict=False)
+        model.eval()
+        codes = model.encode(acts).detach().numpy()
+        np.save(OUT / "sparse_codes_regular.npy", codes)
+        np.save(OUT / "sae_atoms_regular.npy", model.decoder.weight.detach().numpy())
+        print("Saved sparse_codes_regular.npy and sae_atoms_regular.npy")
+
+    if args.mode in ("monosemantic", "both"):
+        model = MonosemanticSAE(acts.shape[1], 64, 512)
+
+        # --- Flexible state_dict loader for pretrained InterPLM SAEs ---
+        state_path = OUT / "sae_mono.pt"
+        if not state_path.exists():
+            raise FileNotFoundError("Expected pretrained SAE weights at outputs/sae_mono.pt")
+
+        print("[INFO] Loading SAE weights (flexible mapping enabled)")
+        state_dict = torch.load(state_path, map_location="cpu")
+
+        mapped_state_dict = {}
+        for k, v in state_dict.items():
+            # Map single-layer InterPLM encoder/decoder to local Sequential structure
+            if k.startswith("encoder.") and not k.startswith("encoder.0."):
+                mapped_state_dict[k.replace("encoder.", "encoder.0.")] = v
+            elif k.startswith("decoder.") and not k.startswith("decoder.0."):
+                mapped_state_dict[k.replace("decoder.", "decoder.0.")] = v
+            else:
+                mapped_state_dict[k] = v
+
+        # Non-strict loading: ignore irrelevant InterPLM-specific keys
+        model.load_state_dict(mapped_state_dict, strict=False)
+        print("[INFO] Pretrained SAE loaded successfully")
+
+        model.eval()
+        codes = model.encode(acts).detach().numpy()
+        np.save(OUT / "sparse_codes_mono.npy", codes)
+        np.save(OUT / "sae_atoms_mono.npy", model.decoder[0].weight.detach().numpy())
+        print("Saved sparse_codes_mono.npy and sae_atoms_mono.npy")
+
+    # Visual threshold diagnostic
+    codes = np.load(OUT / f"sparse_codes_{'mono' if args.mode == 'monosemantic' else 'regular'}.npy")
+    thresh = np.percentile(np.abs(codes), args.threshold_pct)
+    plt.hist(np.abs(codes).ravel(), bins=100)
+    plt.axvline(thresh, color='r', linestyle='--', label=f'{args.threshold_pct}th pct')
+    plt.legend()
+    plt.title("Activation Magnitude Distribution")
+    plt.savefig(OUT / "activation_distribution.png")
+    plt.close()
+
+if __name__ == "__main__":
     main()
