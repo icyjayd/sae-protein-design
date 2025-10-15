@@ -172,7 +172,7 @@ def main():
             "gene": args.gene,
             "property": args.property,
             "model": args.from_hf_model or "retrained",
-            "layer": args.layer,
+            "layer": args.layer if args.layer else INTERPLM_PRESETS[args.from_hf_model]["default"],
             "mode": args.mode,
             "retrain": args.retrain,
             "timestamp": datetime.now().isoformat()

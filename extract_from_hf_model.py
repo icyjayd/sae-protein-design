@@ -13,6 +13,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--model', required=True)
     ap.add_argument('--seqfile', required=True)
+    ap.add_argument('--labelfile', required=True)
     ap.add_argument('--layer', type=int, default=-1)
     ap.add_argument('--pool', choices=['mean','cls'], default='mean')
     ap.add_argument('--outdir', default='outputs')
@@ -41,9 +42,11 @@ def main():
         A = p.transform(A)
         np.save(OUT/'pca_components.npy', p.components_)
         np.save(OUT/'pca_mean.npy', p.mean_)
+    labels = np.load(args.labelfile)
+    np.save(OUT/'labels.npy', labels)
     np.save(OUT/'activations.npy', A)
     np.save(OUT/'sequences.npy', np.array(seqs, dtype=object))
-    print('Saved outputs/activations.npy and outputs/sequences.npy')
+    print('Saved outputs/activations.npy, outputs/labels.npy, and outputs/sequences.npy')
 
 if __name__ == '__main__':
     main()
