@@ -1,5 +1,5 @@
 # Outputs and checkpoints
-outputs/
+outputs*/
 *.pt
 *.npy
 *.json
