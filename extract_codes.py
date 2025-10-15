@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from utils.model_utils import SparseAutoencoderSAE, MonosemanticSAE
 
-OUT = Path("OUTPUTS")
+OUT = Path("outputs")
 
 # --- A tiny wrapper compatible with InterPLM checkpoints ----------------------
 class InterPLMCompat(torch.nn.Module):
