@@ -4,6 +4,8 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
+import pandas as pd
+import scipy.stats as stats
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
@@ -20,10 +22,10 @@ def load_metadata():
 
 def spearman_safe(a, b):
     try:
-        rho, _ = spearmanr(a, b)
-        return rho if np.isfinite(rho) else 0.0
+        rho, p = spearmanr(a, b)
+        return rho, p if np.isfinite(rho) else 0.0
     except Exception:
-        return 0.0
+        return 0.0, 1.0
 
 def add_metadata_text(meta):
     fields = []
@@ -51,7 +53,21 @@ def run_for_suffix(sfx, sequences, y, meta):
         print(f"[WARN] No data found for {sfx}; skipping.")
         return results
 
-    corrs = [spearman_safe(Z[:, i], y) for i in range(Z.shape[1])]
+    corrs, pvals = [], []
+    for i in range(Z.shape[1]):
+        rho, p = spearmanr(Z[:, i], y)
+        corrs.append(rho)
+        pvals.append(p)
+
+    # Save to CSV
+    corr_df = pd.DataFrame({
+        "latent_index": np.arange(Z.shape[1]),
+        "spearman": corrs,
+        "p_value": pvals,
+    })
+    csv_path = OUT / f"latent_property_correlation_{sfx}.csv"
+    corr_df.to_csv(csv_path, index=False)
+    print(f"[INFO] Saved correlation results to {csv_path}")
     results["latent_property_corr_mean"] = float(np.mean(np.abs(corrs)))
 
     # Correlation Plot
@@ -96,7 +112,8 @@ def create_pdf_report(summary, meta):
     styles = getSampleStyleSheet()
     story = [Paragraph("Protein SAE Analysis Report", styles["Title"]),
              Spacer(1, 12)]
-
+    print("[INFO] Summary:", summary)
+    print("[INFO] Meta:", meta)
     if meta:
         story.append(Paragraph("Metadata", styles["Heading2"]))
         for k, v in meta.items():
@@ -118,11 +135,43 @@ def create_pdf_report(summary, meta):
 
     doc.build(story)
     print(f"[INFO] PDF report created at {pdf_path}")
+def generate_qq_plot(csv_path: Path, suffix: str, meta: dict = {}):
+    if not csv_path.exists():
+        print(f"[WARN] {csv_path} not found. Skipping Q-Q plot for {suffix}.")
+        return
+
+    df = pd.read_csv(csv_path)
+    if "p_value" not in df:
+        print(f"[WARN] p_value column not found in {csv_path}")
+        return
+
+    pvals = df["p_value"].dropna()
+    pvals = np.clip(pvals, 1e-10, 1)  # Avoid log(0)
+
+    expected = -np.log10(np.linspace(1/len(pvals), 1, len(pvals)))
+    observed = -np.log10(np.sort(pvals))
+
+    plt.figure(figsize=(6, 6))
+    plt.plot(expected, observed, marker='o', linestyle='', label='Observed')
+    plt.plot(expected, expected, linestyle='--', color='gray', label='Expected (null)')
+    plt.xlabel("Expected -log10(p)")
+    plt.ylabel("Observed -log10(p)")
+    plt.title(f"p-value Q-Q Plot: {suffix}")
+    plt.suptitle(add_metadata_text(meta), fontsize=8, y=0.95)
+
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(OUT / f"qq_plot_{suffix}.png")
+    plt.close()
+    print(f"[INFO] Saved Q-Q plot to qq_plot_{suffix}.png")
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lite", action="store_true")
+    ap.add_argument("outdir", nargs="?", default="outputs")
     args = ap.parse_args()
+    OUT = Path(args.outdir)
 
     prop_path = OUT / "labels.npy"
     seq_path = OUT / "sequences.npy"
@@ -138,8 +187,11 @@ def main():
 
     with open(OUT / "metrics_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
-
     create_pdf_report(summary, meta)
+
+    generate_qq_plot(OUT / "latent_property_correlation_mono.csv", "mono", meta=meta)
+    generate_qq_plot(OUT / "latent_property_correlation_regular.csv", "regular", meta=meta)
+
     print("[INFO] Analysis complete.")
 
 if __name__ == "__main__":
