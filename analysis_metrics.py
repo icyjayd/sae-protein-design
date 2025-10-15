@@ -169,8 +169,10 @@ def generate_qq_plot(csv_path: Path, suffix: str, meta: dict = {}):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lite", action="store_true")
-    ap.add_argument("outdir", nargs="?", default="outputs")
+    ap.add_argument("--outdir", nargs="?", default="outputs")
     args = ap.parse_args()
+    # OUT = Path("outputs" + (f"_{args.out_sfx}" if args.out_sfx else ""))
+    global OUT
     OUT = Path(args.outdir)
 
     prop_path = OUT / "labels.npy"

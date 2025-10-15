@@ -9,6 +9,9 @@ from utils.model_utils import MonosemanticSAE, SparseAutoencoderSAE, get_device
 from datetime import datetime
 sys.path.append("interplm")
 from interplm.sae.inference import load_sae_from_hf
+import os
+import glob
+import shutil
 
 OUT = Path("outputs")
 
@@ -162,11 +165,25 @@ def main():
     ap.add_argument("--device", type=str, default=None)
     ap.add_argument("--gene", type=str, default="", help="Gene name (optional)")
     ap.add_argument("--property", type=str, default="", help="Property measured (optional)")
+    ap.add_argument("--use_outdir", nargs="?", default=True)
     args = ap.parse_args()
 
     if args.list_hf_presets:
         list_presets()
-
+    global OUT
+    
+    if args.use_outdir:
+        out_sfx = f"{args.gene}_{args.property}" if args.gene or args.property else ""
+        if args.from_hf_model:
+            out_sfx += f"{args.from_hf_model}"
+            if args.layer is not None:
+                out_sfx += f"_layer{args.layer}"
+            else:
+                out_sfx += f"_layer{INTERPLM_PRESETS[args.from_hf_model]['default']}"
+        elif args.retrain:
+            out_sfx += "_retrained"
+        OUT = Path("outputs" + (f"_{out_sfx}" if out_sfx else ""))
+    OUT.mkdir(exist_ok=True)
     if args.gene or args.property:
         (OUT / "metadata.json").write_text(json.dumps({
             "gene": args.gene,
@@ -178,7 +195,21 @@ def main():
             "timestamp": datetime.now().isoformat()
 
         }, indent=2))
-
+    
+    source = str(Path('temp'))
+    if not os.path.exists(source):
+        raise SystemExit("Missing temp/ directory. Run extract_from_hf_model.py or generate_activations.py first.")
+    destination = str(OUT)
+    files = glob.glob(os.path.join(source, '*'))
+    for f in files:
+        
+        dest_filename = f.replace(source, destination)
+        if os.path.exists(f):
+            if os.path.exists(dest_filename):
+                os.remove(dest_filename)
+            shutil.move(f, dest_filename)
+        else:
+            print(f"Source file {source_filename} does not exist.")
     if not (OUT / "activations.npy").exists():
         raise SystemExit("Missing outputs/activations.npy. Run extract_from_hf_model.py or generate_activations.py first.")
 
@@ -217,8 +248,8 @@ def main():
     elif not used_hf:
         print("[INFO] Skipping training (no --retrain and no --from_hf_model). Expect existing models in outputs/.")
 
-    run_cmd([sys.executable, "extract_codes.py", "--mode", "monosemantic" if used_hf else args.mode, "--threshold-pct", str(args.threshold_pct)])
-    run_cmd([sys.executable, "analysis_metrics.py"], env=dict(**os.environ, GENE=args.gene, PROPERTY=args.property))
+    run_cmd([sys.executable, "extract_codes.py", "--mode", "monosemantic" if used_hf else args.mode, "--threshold-pct", str(args.threshold_pct), "--outdir", str(OUT)])
+    run_cmd([sys.executable, "analysis_metrics.py", "--outdir", str(OUT)], env=dict(**os.environ, GENE=args.gene, PROPERTY=args.property))
     build_report(OUT / "pipeline_report.pdf")
 
 if __name__ == "__main__":

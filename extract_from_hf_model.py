@@ -16,12 +16,11 @@ def main():
     ap.add_argument('--labelfile', required=True)
     ap.add_argument('--layer', type=int, default=-1)
     ap.add_argument('--pool', choices=['mean','cls'], default='mean')
-    ap.add_argument('--outdir', default='outputs')
     ap.add_argument('--pca', action='store_true')
     ap.add_argument('--pca-dim', type=int, default=512)
     args = ap.parse_args()
 
-    OUT = Path(args.outdir); OUT.mkdir(exist_ok=True)
+    OUT = Path('temp'); OUT.mkdir(exist_ok=True)
     tok = AutoTokenizer.from_pretrained(args.model)
     mdl = AutoModel.from_pretrained(args.model); mdl.eval()
 
@@ -46,7 +45,7 @@ def main():
     np.save(OUT/'labels.npy', labels)
     np.save(OUT/'activations.npy', A)
     np.save(OUT/'sequences.npy', np.array(seqs, dtype=object))
-    print('Saved outputs/activations.npy, outputs/labels.npy, and outputs/sequences.npy')
+    print(f'Saved {OUT}/activations.npy, {OUT}/labels.npy, and {OUT}/sequences.npy')
 
 if __name__ == '__main__':
     main()

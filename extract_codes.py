@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from utils.model_utils import SparseAutoencoderSAE, MonosemanticSAE
 
-OUT = Path("outputs")
+OUT = Path("OUTPUTS")
 
 # --- A tiny wrapper compatible with InterPLM checkpoints ----------------------
 class InterPLMCompat(torch.nn.Module):
@@ -135,7 +135,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["regular", "monosemantic", "both"], default="both")
     ap.add_argument("--threshold-pct", type=float, default=70)
+    ap.add_argument("--outdir", nargs="?", default="outputs")
     args = ap.parse_args()
+    global OUT
+    OUT = Path(args.outdir)
+    OUT.mkdir(exist_ok=True)
 
     acts = load_numpy("activations.npy")
 

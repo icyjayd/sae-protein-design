@@ -7,3 +7,4 @@ outputs*/
 *.png
 *.ckpt
 utils/__pycache__/
+temp/
