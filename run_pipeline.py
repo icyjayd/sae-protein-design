@@ -1,12 +1,12 @@
-
 #!/usr/bin/env python3
-import argparse, sys, subprocess, json
+import argparse, sys, subprocess, json, os
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import torch
 from utils.model_utils import MonosemanticSAE, SparseAutoencoderSAE, get_device
+from datetime import datetime
 sys.path.append("interplm")
 from interplm.sae.inference import load_sae_from_hf
 
@@ -25,23 +25,23 @@ def list_presets():
         print(f"- {model}: default={cfg['default']} layers={cfg['layers']}")
     sys.exit(0)
 
-def run_cmd(cmd):
+def run_cmd(cmd, env=None):
     print("[RUN]", " ".join(cmd))
-    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
     print(res.stdout)
     if res.returncode != 0:
         raise SystemExit(f"Command failed: {' '.join(cmd)}")
 
 def ensure_interplm_installed():
     try:
-        import interplm  # noqa
+        import interplm
         return True
     except Exception:
         print("[INFO] interplm not found. Installing...")
         res = subprocess.run([sys.executable, "-m", "pip", "install", "interplm"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(res.stdout)
         try:
-            import interplm  # noqa
+            import interplm
             return True
         except Exception:
             print("[WARN] Failed to install interplm automatically.")
@@ -51,9 +51,7 @@ def load_hf_sae(plm_model: str, plm_layer: int):
     ok = ensure_interplm_installed()
     if not ok:
         raise SystemExit("interplm is required for --from_hf_model usage. Please install it and retry.")
-    from interplm.sae.inference import load_sae_from_hf
-    sae = load_sae_from_hf(plm_model=plm_model, plm_layer=plm_layer)
-    return sae
+    return load_sae_from_hf(plm_model=plm_model, plm_layer=plm_layer)
 
 def freeze_modules(model: torch.nn.Module, freeze: str, lr_mult: float = 0.1):
     params = []
@@ -87,10 +85,20 @@ def finetune(model, X, epochs=10, lr=1e-3, l1=1e-3, device=None, freeze="none", 
     return model
 
 def build_report(pdf_path: Path):
+    metadata = {}
+    meta_path = OUT / "metadata.json"
+    if meta_path.exists():
+        metadata = json.loads(meta_path.read_text())
+
     with PdfPages(pdf_path) as pdf:
         fig = plt.figure(figsize=(8.5, 11)); plt.axis('off')
         plt.text(0.1, 0.95, "SAE Steering Pipeline Report", fontsize=20, weight='bold')
-        plt.text(0.1, 0.92, "regular / monosemantic", fontsize=12)
+        if metadata:
+            y = 0.91
+            if "gene" in metadata:
+                plt.text(0.1, y, f"Gene: {metadata['gene']}", fontsize=12); y -= 0.03
+            if "property" in metadata:
+                plt.text(0.1, y, f"Property: {metadata['property']}", fontsize=12); y -= 0.03
         pdf.savefig(fig); plt.close(fig)
 
         for suffix, label in (("regular","Regular"), ("mono","Monosemantic")):
@@ -134,15 +142,12 @@ def build_report(pdf_path: Path):
 
 def main():
     ap = argparse.ArgumentParser()
-    # Presets / HF loading
     ap.add_argument("--list-hf-presets", action="store_true")
     ap.add_argument("--from_hf_model", type=str, default="", help="e.g., esm2-8m")
     ap.add_argument("--layer", type=int, default=None, help="PLM layer index for HF model")
-    # Finetune controls
     ap.add_argument("--finetune", action="store_true")
     ap.add_argument("--freeze", type=str, default="none", choices=["none","encoder","decoder","both"])
     ap.add_argument("--lr-mult", type=float, default=0.1)
-    # Local training options
     ap.add_argument("--mode", choices=["regular","monosemantic","both"], default="both")
     ap.add_argument("--retrain", action="store_true")
     ap.add_argument("--epochs", type=int, default=60)
@@ -155,10 +160,24 @@ def main():
     ap.add_argument("--topk", type=int, default=8)
     ap.add_argument("--threshold-pct", type=int, default=70)
     ap.add_argument("--device", type=str, default=None)
+    ap.add_argument("--gene", type=str, default="", help="Gene name (optional)")
+    ap.add_argument("--property", type=str, default="", help="Property measured (optional)")
     args = ap.parse_args()
 
     if args.list_hf_presets:
         list_presets()
+
+    if args.gene or args.property:
+        (OUT / "metadata.json").write_text(json.dumps({
+            "gene": args.gene,
+            "property": args.property,
+            "model": args.from_hf_model or "retrained",
+            "layer": args.layer,
+            "mode": args.mode,
+            "retrain": args.retrain,
+            "timestamp": datetime.now().isoformat()
+
+        }, indent=2))
 
     if not (OUT / "activations.npy").exists():
         raise SystemExit("Missing outputs/activations.npy. Run extract_from_hf_model.py or generate_activations.py first.")
@@ -199,7 +218,7 @@ def main():
         print("[INFO] Skipping training (no --retrain and no --from_hf_model). Expect existing models in outputs/.")
 
     run_cmd([sys.executable, "extract_codes.py", "--mode", "monosemantic" if used_hf else args.mode, "--threshold-pct", str(args.threshold_pct)])
-    run_cmd([sys.executable, "analysis_metrics.py"])
+    run_cmd([sys.executable, "analysis_metrics.py"], env=dict(**os.environ, GENE=args.gene, PROPERTY=args.property))
     build_report(OUT / "pipeline_report.pdf")
 
 if __name__ == "__main__":
