@@ -12,7 +12,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(1, os.path.join(REPO_ROOT, 'interplm'))
 from interplm.sae.inference import load_sae_from_hf
 
-from utils.esm_utils import load_esm2_model, encode_sequence, decode_activation
+from utils.esm_utils import load_esm2_model, encode_sequence
 import warnings
 # Dummy SAE projection weights for testing
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,41 +34,18 @@ def load_interplm_sae(model_name="esm2-8m", layer=4, device="cpu"):
     sae.eval()
     return sae
 
-def test_sequence_reconstruction(esm_model):
-    model_name = "facebook/esm2_t6_8M_UR50D"
-    model = EsmForMaskedLM.from_pretrained(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model.to(device)
-    model.eval()
-
-    sequence = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQANLQK"
-    # warnings.warn(f"sequence length: {len(sequence)}")
-    # Step 1: Encode sequence → pooled embedding
-    token_reps, pooled = encode_sequence(sequence, model, tokenizer, device=device)
-    # warnings.warn(f"token_reps shape: {token_reps.shape}")
-
-    # Step 2: Create compatible projection matrices
-    #  encoder:  hidden_size → latent_dim
-    #  decoder:  latent_dim → hidden_size
-    sae = load_interplm_sae(model_name="esm2-8m", layer=6, device=device)
-
-    # Encode and decode with SAE
-    # acts = torch.tensor(original_vector, dtype=torch.float32).unsqueeze(0)
-    # latent = sae.encoder(acts)
-    # reconstructed = sae.decoder(latent).detach().cpu().numpy().flatten()
-    
-    # token_reps is (L, hidden_dim)
-    # Expect token_reps: (L, hidden_dim)
+def check_seq(sequence, model, tokenizer, sae, device="cpu"):
+    token_reps, _ = encode_sequence(sequence, model, tokenizer, device=device)
     token_reps = token_reps.unsqueeze(0)           # (1, L, hidden_dim)
     L = token_reps.shape[1] 
-
+    
     # Flatten to feed per-token vectors through SAE
     reconstructed_tokens = []
     warnings.warn((
         f"token_reps shape: {token_reps.shape} | "
         f"L: {L}"
         ))
-    for i in range(1, token_reps.shape[1]-1):  # iterate over L
+    for i in range(1, L-1):  # iterate over L
         token_vec = token_reps[0, i].unsqueeze(0)  # (1, hidden_dim)
         latent = sae.encode(token_vec)
         recon = sae.decode(latent).squeeze()
@@ -102,7 +79,20 @@ def test_sequence_reconstruction(esm_model):
     warnings.warn((f"\nseq: {sequence}\n"
                    f"dec: {decoded_seq}"))
     assert decoded_seq == sequence, f"Reconstruction failed: {decoded_seq} !=\n {sequence}"
+def get_models():
+    model_name = "facebook/esm2_t6_8M_UR50D"
+    model = EsmForMaskedLM.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model.to(device)
+    model.eval()
+    sae = load_interplm_sae(model_name="esm2-8m", layer=6, device=device)
+    sae.eval()
+    return model, tokenizer, sae
+def test_sequence_reconstruction():
+    model, tokenizer, sae = get_models()
+    sequence = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQANLQK"
+    check_seq(sequence, model, tokenizer, sae, device=device)
+    # warnings.warn(f"sequence length: {len(sequence)}")
+    # Step 1: Encode sequence → pooled embedding
 
-    # warnings.warn((f"[PASS] Sequence reconstruction test passed with correlation {corr:.4f} |"
            
-    #        ))
