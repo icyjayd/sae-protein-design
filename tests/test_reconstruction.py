@@ -42,35 +42,66 @@ def test_sequence_reconstruction(esm_model):
     model.eval()
 
     sequence = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQANLQK"
-
+    # warnings.warn(f"sequence length: {len(sequence)}")
     # Step 1: Encode sequence → pooled embedding
-    full_reps, pooled = encode_sequence(sequence, model, tokenizer, device=device)
-    original_vector = torch.tensor(pooled.cpu().numpy().flatten(), dtype=torch.float32)
-
-    token_reps = full_reps[0]  # (L, hidden_size)
+    token_reps, pooled = encode_sequence(sequence, model, tokenizer, device=device)
+    # warnings.warn(f"token_reps shape: {token_reps.shape}")
 
     # Step 2: Create compatible projection matrices
     #  encoder:  hidden_size → latent_dim
     #  decoder:  latent_dim → hidden_size
-    sae = load_interplm_sae(model_name="esm2-8m", layer=4, device=device)
+    sae = load_interplm_sae(model_name="esm2-8m", layer=6, device=device)
 
     # Encode and decode with SAE
-    acts = torch.tensor(original_vector, dtype=torch.float32).unsqueeze(0)
+    # acts = torch.tensor(original_vector, dtype=torch.float32).unsqueeze(0)
     # latent = sae.encoder(acts)
     # reconstructed = sae.decoder(latent).detach().cpu().numpy().flatten()
-    latent = sae.encode(token_reps)
-    reconstructed = sae.decode(latent).detach()
-    with torch.no_grad():
-        logits = model.lm_head(reconstructed)
-        predicted_ids = torch.argmax(logits, dim=-1)
-    predicted_tokens = tokenizer.convert_ids_to_tokens(predicted_ids.tolist())
-    decoded_seq = "".join([t for t in predicted_tokens if t not in ("<pad>", "<cls>", "</s>")])
+    
+    # token_reps is (L, hidden_dim)
+    # Expect token_reps: (L, hidden_dim)
+    token_reps = token_reps.unsqueeze(0)           # (1, L, hidden_dim)
+    L = token_reps.shape[1] 
 
+    # Flatten to feed per-token vectors through SAE
+    reconstructed_tokens = []
+    warnings.warn((
+        f"token_reps shape: {token_reps.shape} | "
+        f"L: {L}"
+        ))
+    for i in range(1, token_reps.shape[1]-1):  # iterate over L
+        token_vec = token_reps[0, i].unsqueeze(0)  # (1, hidden_dim)
+        latent = sae.encode(token_vec)
+        recon = sae.decode(latent).squeeze()
+        reconstructed_tokens.append(recon)
+    # warnings.warn((
+    #     f"Number of reconstructed tokens: {len(reconstructed_tokens)} |"
+    #     f"token_vec shape: {token_vec.shape} |"
+    #     f"latent shape: {latent.shape} |"
+    #     f"recon shape: {recon.shape} |"
+    #     f"len reconstructed_tokens: {len(reconstructed_tokens)} |"
+    #     f"reconstructed_tokens[0] shape: {reconstructed_tokens[0].shape}"
+    #     ))
+    reconstructed = torch.stack(reconstructed_tokens).detach()  # (1, L, hidden_dim)
+    with torch.no_grad():
+        # warnings.warn(f"latent shape: {latent.shape}")
+        # warnings.warn(f"reconstructed shape: {reconstructed.shape}")
+        logits = model.lm_head(reconstructed)     # (L, vocab_size)
+        # warnings.warn(f"logits shape: {logits.shape}")
+        predicted_ids = torch.argmax(logits, dim=-1)
+        # warnings.warn(f"predicted_ids shape: {predicted_ids.shape}")
+        # warnings.warn(f"len predicted_ids: {len(predicted_ids)} ")
+        predicted_tokens = tokenizer.convert_ids_to_tokens(predicted_ids.tolist())
+        decoded_seq = "".join(
+            tok for tok in predicted_tokens if tok not in {"<cls>", "<eos>", "<pad>", "<mask>"}
+    )
+    assert len(decoded_seq) == len(sequence), f"Decoded sequence length mismatch: {len(decoded_seq)} != {len(sequence)}"
     # Compute correlation
     # corr = np.corrcoef(original_vector.flatten(), reconstructed.flatten())[0, 1]
     # print(f"Correlation between original and reconstructed: {corr:.4f}")
     # assert corr > 0.5, f"Reconstruction correlation too low: {corr:.4f}"
-    assert decoded_seq == sequence, f"Reconstruction failed: {decoded_seq} != {sequence}"
+    warnings.warn((f"\nseq: {sequence}\n"
+                   f"dec: {decoded_seq}"))
+    assert decoded_seq == sequence, f"Reconstruction failed: {decoded_seq} !=\n {sequence}"
 
     # warnings.warn((f"[PASS] Sequence reconstruction test passed with correlation {corr:.4f} |"
            
