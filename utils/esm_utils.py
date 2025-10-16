@@ -15,9 +15,11 @@ def encode_sequence(sequence, model, tokenizer, device="cpu"):
     inputs = tokenizer(sequence, return_tensors="pt", add_special_tokens=True)
     inputs = {k: v.to(device) for k, v in inputs.items()}
     with torch.no_grad():
-        outputs = model(**inputs)
-    token_reps = outputs.last_hidden_state.squeeze(0)  # (L x D)
-    return token_reps, outputs.pooler_output.squeeze(0)  # (D)
+        outputs = model(**inputs, output_hidden_states=True)
+        # use the last hidden state (before LM head)
+        token_reps = outputs.hidden_states[-1].squeeze(0)
+    pooled = token_reps.mean(dim=0)
+    return token_reps, pooled
 
 def decode_activation(activation, projection_weights):
     """
