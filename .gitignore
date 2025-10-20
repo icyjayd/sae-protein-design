@@ -1,10 +1,14 @@
 # Outputs and checkpoints
-outputs*/
-*.pt
-*.npy
-*.json
-*.pdf
-*.png
-*.ckpt
-utils/__pycache__/
-temp/
+sae/outputs*/
+sae/*.pt
+sae/*.npy
+sae/*.json
+sae/*.pdf
+sae/*.png
+sae/*.ckpt
+sae/utils/__pycache__/
+sae/temp/
+sae/README_*
+#InterPLM
+sae/interplm/
+
