@@ -17,3 +17,6 @@ interplm/
 tests/*.csv
 pytest_cache/
 runs/
+
+# Windows metadata
+desktop.ini
