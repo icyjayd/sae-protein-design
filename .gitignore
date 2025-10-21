@@ -16,3 +16,4 @@ agentic_lab/__pycache__/
 interplm/
 tests/*.csv
 pytest_cache/
+runs/
