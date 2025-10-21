@@ -33,14 +33,16 @@ def perturb_latent(latent: List[float], dim: int, delta: float) -> List[float]:
     return v
 
 def decode_latent(latent, base_seq="MKTLLILAVITAIAAGALA"):
-    # identify which dimension changed
+    # Identify which dimension changed based on difference from previous latent
+    cur = np.array(latent, dtype=float)
     if hasattr(decode_latent, "prev_latent"):
-        diffs = latent - decode_latent.prev_latent
+        prev = np.array(decode_latent.prev_latent, dtype=float)
+        diffs = cur - prev
         dim = int(np.argmax(np.abs(diffs)))
         delta = float(diffs[dim])
     else:
         dim, delta = 0, 0.0
-    decode_latent.prev_latent = latent.copy()
+    decode_latent.prev_latent = cur.tolist()
     return sae.perturb_and_decode(base_seq, dim=dim, delta=delta)
 
 # -----------------------------------------------------------------------------
@@ -49,6 +51,8 @@ def decode_latent(latent, base_seq="MKTLLILAVITAIAAGALA"):
 def score_sequence_wrapper(seq: str) -> Tuple[float, float, float]:
     """Compute (stability, folding, plausibility) for a sequence."""
     return score_sequence(seq)
+
+ 
 
 def sequence_similarity(seq_a: str, seq_b: str) -> float:
     """

@@ -17,7 +17,7 @@ from interplm.sae.inference import load_sae_from_hf
 # --- SAE imports ---
 from sae.extract_codes import load_mono_model_flex
 # --- Scoring imports ---
-from scoring import surrogate_score, predict_stability, predict_folding
+from scoring import surrogate_score, predict_stability, predict_folding, score_sequence as _score_sequence
 
 OUT = Path("outputs")
 
@@ -60,7 +60,8 @@ class RealSAE:
         z = latents.mean(dim=0).detach().cpu().numpy()
         if latent_dim:
             z = z[:latent_dim]
-        return z
+        # Tests expect a Python list of floats
+        return z.astype(float).tolist()
 
     # -------------------------------------------------------------
     def decode(self, sequence_or_latent):
@@ -128,8 +129,4 @@ class RealSAE:
 
 def score_sequence(sequence: str) -> Tuple[float, float, float]:
     print(f"[INFO] Scoring sequence of length {len(sequence)}")
-    """Compute stability, folding, and plausibility scores."""
-    stability = predict_stability(sequence)
-    folding = predict_folding(sequence)
-    plausibility = surrogate_score(sequence)
-    return (stability, folding, plausibility)
+    return _score_sequence(sequence)
