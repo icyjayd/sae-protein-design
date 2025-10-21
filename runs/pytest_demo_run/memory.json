@@ -1,0 +1,19 @@
+[
+  {
+    "timestamp": 1761008081.8005755,
+    "event": "trial",
+    "seq_id": "test_seq",
+    "base_seq": "MKTLLILAVITAIAAGALA",
+    "edited_seq": "FRKLILNGKTLKGETTTEAVDAATAEKVFKQYANDNGVDGEWTYDDATKTFTVTE",
+    "dim": 0,
+    "delta": -0.2,
+    "scores": {
+      "stability": 0.5,
+      "folding": 0.5,
+      "plausibility": 0.9
+    },
+    "similarity": 0.0812,
+    "reversible_similarity": 0.0812,
+    "accepted": false
+  }
+]

@@ -1,0 +1,9 @@
+{
+  "gene": "GB1",
+  "property": "Binding",
+  "model": "esm2-8m",
+  "layer": 4,
+  "mode": "both",
+  "retrain": false,
+  "timestamp": "2025-10-20T20:25:24.396828"
+}

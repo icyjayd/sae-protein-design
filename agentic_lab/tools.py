@@ -1,79 +1,74 @@
+# agentic_lab/tools.py
 from __future__ import annotations
 from typing import List, Tuple
-import hashlib
-import math
-import random
+import sys, os
+import numpy as np 
+# -----------------------------------------------------------------------------
+#  Path setup — ensures sibling packages like `sae/` are importable
+# -----------------------------------------------------------------------------
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT not in sys.path:
+    sys.path.append(ROOT)
 
-# -------------------- Mock scientific tools --------------------
-# These are designed to be *drop-in replaced* later with real models.
-# No external dependencies are used here.
+# -----------------------------------------------------------------------------
+#  Real SAE + Scoring Imports
+# -----------------------------------------------------------------------------
+from agentic_adapter import RealSAE, score_sequence
+from sae.utils.grade_reconstructions import grade_pair
 
-AMINO_ALPHABET = "ACDEFGHIKLMNPQRSTVWY"
-
-def _seed_from_seq(seq: str) -> int:
-    # Deterministic seed from sequence content
-    h = hashlib.sha256(seq.encode()).hexdigest()
-    return int(h[:16], 16)
+# -----------------------------------------------------------------------------
+#  SAE + Latent Operations
+# -----------------------------------------------------------------------------
+sae = RealSAE(model_name="esm2-8m", layer=6)
 
 def encode_sequence(seq: str, latent_dim: int) -> List[float]:
-    """Mock encoder: pseudo-random but deterministic vector from the sequence."""
-    rnd = random.Random(_seed_from_seq(seq))
-    return [rnd.uniform(-1.0, 1.0) for _ in range(latent_dim)]
+    """Encode a protein sequence into latent space using the real SAE."""
+    return sae.encode(seq, latent_dim)
 
 def perturb_latent(latent: List[float], dim: int, delta: float) -> List[float]:
-    v = latent[:]  # copy
+    """Apply a directional perturbation to one latent dimension."""
+    v = latent[:]  # shallow copy
     if 0 <= dim < len(v):
         v[dim] += delta
     return v
 
-def decode_latent(latent: List[float]) -> str:
-    """Mock decoder: maps latent back to a plausible amino string.
-    This is intentionally simplistic: thresholds select an amino acid index.
+def decode_latent(latent, base_seq="MKTLLILAVITAIAAGALA"):
+    # identify which dimension changed
+    if hasattr(decode_latent, "prev_latent"):
+        diffs = latent - decode_latent.prev_latent
+        dim = int(np.argmax(np.abs(diffs)))
+        delta = float(diffs[dim])
+    else:
+        dim, delta = 0, 0.0
+    decode_latent.prev_latent = latent.copy()
+    return sae.perturb_and_decode(base_seq, dim=dim, delta=delta)
+
+# -----------------------------------------------------------------------------
+#  Scoring and Evaluation
+# -----------------------------------------------------------------------------
+def score_sequence_wrapper(seq: str) -> Tuple[float, float, float]:
+    """Compute (stability, folding, plausibility) for a sequence."""
+    return score_sequence(seq)
+
+def sequence_similarity(seq_a: str, seq_b: str) -> float:
     """
-    n = max(30, min(200, len(latent) * 3))
-    # fold latent values into indices deterministically
-    seq = []
-    for i in range(n):
-        x = latent[i % len(latent)]
-        idx = int(abs(x) * 997) % len(AMINO_ALPHABET)
-        seq.append(AMINO_ALPHABET[idx])
-    return "".join(seq)
-
-def score_sequence(seq: str) -> Tuple[float, float, float]:
-    """Return (stability, folding, plausibility) in [0, 1]. Deterministic.
-    We engineer simple signals from composition and motifs to simulate behavior.
+    Compute overall alignment similarity between two sequences.
+    Uses grade_reconstructions.grade_pair(), which combines:
+      - identity %
+      - BLOSUM62 similarity
+      - normalized alignment
+      - Levenshtein similarity
+      - weighted composite final score
     """
-    # Composition features
-    length = len(seq) or 1
-    hydrophobic = set("AILMFWYV")
-    charged = set("DEHKR")
-    hyd_count = sum(aa in hydrophobic for aa in seq)
-    charged_count = sum(aa in charged for aa in seq)
-    gly_count = seq.count("G")
-    pro_count = seq.count("P")
+    result = grade_pair(seq_a, seq_b)
+    return result.get("final_score", 0.0)
 
-    # Toy metrics
-    hyd_ratio = hyd_count / length
-    charge_balance = 1.0 - abs((charged_count / length) - 0.2)  # prefer ~20% charged
-    gly_pro_penalty = max(0.0, 1.0 - (gly_count + pro_count) / (0.25 * length + 1e-9))
-
-    # Motif rewards (simulate 'function-like' structure)
-    motif_bonus = 0.0
-    for motif in ("AAXA", "VIL", "YWY", "STST", "RKD"):
-        if motif in seq:
-            motif_bonus += 0.05
-
-    # Map to scores
-    stability = max(0.0, min(1.0, 0.3 * hyd_ratio + 0.4 * charge_balance + 0.2 * gly_pro_penalty + motif_bonus))
-    folding = max(0.0, min(1.0, 0.5 * hyd_ratio + 0.3 * gly_pro_penalty + 0.1 * charge_balance + motif_bonus))
-    plausibility = max(0.0, min(1.0, 0.4 * charge_balance + 0.3 * (1.0 - abs(hyd_ratio - 0.45)) + 0.2 * gly_pro_penalty + motif_bonus))
-
-    return (stability, folding, plausibility)
-
-def sequence_similarity(a: str, b: str) -> float:
-    """Simple similarity: identity over aligned length (truncate to min len)."""
-    n = min(len(a), len(b))
-    if n == 0:
-        return 0.0
-    matches = sum(1 for i in range(n) if a[i] == b[i])
-    return matches / n
+# -----------------------------------------------------------------------------
+#  Optional convenience functions
+# -----------------------------------------------------------------------------
+def compare_sequences(seq_a: str, seq_b: str) -> dict:
+    """
+    Return the full comparison dictionary from grade_pair(),
+    including identity, similarity, norm_align, lev_sim, final_score.
+    """
+    return grade_pair(seq_a, seq_b)

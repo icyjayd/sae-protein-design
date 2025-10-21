@@ -1,0 +1,6 @@
+{
+  "input_dim": 320,
+  "latent_dim": 10240,
+  "hidden": 512,
+  "topk": null
+}

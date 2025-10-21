@@ -1,0 +1,70 @@
+[
+  {
+    "timestamp": 1761014124.4790652,
+    "event": "trial",
+    "seq_id": "seed",
+    "base_seq": "MKTLLILAVITAIAAGALA",
+    "edited_seq": "MKTLLILAVITAIAAGALA",
+    "dim": 0,
+    "delta": -0.2,
+    "scores": {
+      "stability": 0.5,
+      "folding": 0.5,
+      "plausibility": 0.7757894736842105
+    },
+    "similarity": 1.0,
+    "reversible_similarity": 1.0,
+    "accepted": true
+  },
+  {
+    "timestamp": 1761014124.9108312,
+    "event": "trial",
+    "seq_id": "seed",
+    "base_seq": "MKTLLILAVITAIAAGALA",
+    "edited_seq": "MKTLLILAVITAIAAGALA",
+    "dim": 0,
+    "delta": 0.2,
+    "scores": {
+      "stability": 0.5,
+      "folding": 0.5,
+      "plausibility": 0.7757894736842105
+    },
+    "similarity": 1.0,
+    "reversible_similarity": 1.0,
+    "accepted": true
+  },
+  {
+    "timestamp": 1761014125.3466961,
+    "event": "trial",
+    "seq_id": "seed",
+    "base_seq": "MKTLLILAVITAIAAGALA",
+    "edited_seq": "MKTLLILAVITAIAAGALA",
+    "dim": 0,
+    "delta": -0.2,
+    "scores": {
+      "stability": 0.5,
+      "folding": 0.5,
+      "plausibility": 0.7757894736842105
+    },
+    "similarity": 1.0,
+    "reversible_similarity": 1.0,
+    "accepted": true
+  },
+  {
+    "timestamp": 1761014125.7867453,
+    "event": "trial",
+    "seq_id": "seed",
+    "base_seq": "MKTLLILAVITAIAAGALA",
+    "edited_seq": "MKTLLILAVITAIAAGALA",
+    "dim": 0,
+    "delta": 0.2,
+    "scores": {
+      "stability": 0.5,
+      "folding": 0.5,
+      "plausibility": 0.7757894736842105
+    },
+    "similarity": 1.0,
+    "reversible_similarity": 1.0,
+    "accepted": true
+  }
+]

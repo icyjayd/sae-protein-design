@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import torch
-from utils.model_utils import MonosemanticSAE, SparseAutoencoderSAE, get_device
+from sae.utils.model_utils import MonosemanticSAE, SparseAutoencoderSAE, get_device
 from datetime import datetime
 sys.path.append("interplm")
 from interplm.sae.inference import load_sae_from_hf
@@ -29,6 +29,7 @@ def list_presets():
     sys.exit(0)
 
 def run_cmd(cmd, env=None):
+    cmd = [str(c) for c in cmd]
     print("[RUN]", " ".join(cmd))
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
     print(res.stdout)
@@ -175,7 +176,7 @@ def main():
     if args.use_outdir:
         out_sfx = f"{args.gene}_{args.property}" if args.gene or args.property else ""
         if args.from_hf_model:
-            out_sfx += f"{args.from_hf_model}"
+            out_sfx += f"_{args.from_hf_model}"
             if args.layer is not None:
                 out_sfx += f"_layer{args.layer}"
             else:
@@ -195,7 +196,7 @@ def main():
             "timestamp": datetime.now().isoformat()
 
         }, indent=2))
-    
+    print("OUT directory:", OUT)
     source = str(Path('temp'))
     if not os.path.exists(source):
         raise SystemExit("Missing temp/ directory. Run extract_from_hf_model.py or generate_activations.py first.")
@@ -211,7 +212,7 @@ def main():
         else:
             print(f"Source file {source_filename} does not exist.")
     if not (OUT / "activations.npy").exists():
-        raise SystemExit("Missing outputs/activations.npy. Run extract_from_hf_model.py or generate_activations.py first.")
+        raise SystemExit(f"Missing {OUT}/activations.npy. Run extract_from_hf_model.py or generate_activations.py first.")
 
     used_hf = False
     if args.from_hf_model:
@@ -247,9 +248,11 @@ def main():
                  "--device", str(args.device or "")])
     elif not used_hf:
         print("[INFO] Skipping training (no --retrain and no --from_hf_model). Expect existing models in outputs/.")
+    base = Path(__file__).resolve().parent
+    # subprocess.run([sys.executable, str(extract_script), ...])
 
-    run_cmd([sys.executable, "extract_codes.py", "--mode", "monosemantic" if used_hf else args.mode, "--threshold-pct", str(args.threshold_pct), "--outdir", str(OUT)])
-    run_cmd([sys.executable, "analysis_metrics.py", "--outdir", str(OUT)], env=dict(**os.environ, GENE=args.gene, PROPERTY=args.property))
+    run_cmd([sys.executable, "-m", "sae.extract_codes", "--mode", "monosemantic" if used_hf else args.mode, "--threshold-pct", str(args.threshold_pct), "--outdir", str(OUT)])
+    run_cmd([sys.executable, "-m", "sae.analysis_metrics", "--outdir", str(OUT)], env=dict(**os.environ, GENE=args.gene, PROPERTY=args.property))
     build_report(OUT / "pipeline_report.pdf")
 
 if __name__ == "__main__":

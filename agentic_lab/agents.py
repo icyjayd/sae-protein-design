@@ -64,8 +64,16 @@ class ArchivistAgent:
     def __init__(self, cfg: ExperimentConfig, memory: Memory):
         self.cfg = cfg
         self.memory = memory
-        self.out_dir = (self.cfg.out_dir / self.cfg.run_name)
-        self.out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Determine output directory
+        out_dir = Path(self.cfg.out_dir)
+        if out_dir.name != self.cfg.run_name:
+            out_dir = out_dir / self.cfg.run_name
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save for later use
+        self.out_dir = out_dir
+        self.memory_path = out_dir / "memory.json"
 
     def record(self, tr: TrialResult, accepted: bool):
         row = {

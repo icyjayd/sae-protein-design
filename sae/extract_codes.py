@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from utils.model_utils import SparseAutoencoderSAE, MonosemanticSAE
+from sae.utils.model_utils import SparseAutoencoderSAE, MonosemanticSAE
 
 OUT = Path("outputs")
 
