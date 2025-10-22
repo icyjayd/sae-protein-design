@@ -22,7 +22,7 @@ def main():
 
     # Model/encoding
     ap.add_argument("--model", default="xgb")
-    ap.add_argument("--encoding", default="kmer", choices=["aac", "kmer", "onehot", "esm"])
+    ap.add_argument("--encoding", default="onehot", choices=["aac", "kmer", "onehot", "esm"])
     ap.add_argument("--task", choices=["classification", "regression"])
     ap.add_argument("--seed", type=int, default=42)
 
