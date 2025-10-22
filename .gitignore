@@ -1,5 +1,5 @@
 # Outputs and checkpoints
-outputs/
+./outputs/
 sae/outputs*/
 sae/*.pt
 sae/*.npy
@@ -20,4 +20,5 @@ pytest_cache/
 runs/
 
 # Windows metadata
-desktop.ini
+desktop.ini.
+.vscode/
