@@ -1,5 +1,5 @@
 # Outputs and checkpoints
-./outputs/
+outputs/
 sae/outputs*/
 sae/*.pt
 sae/*.npy
