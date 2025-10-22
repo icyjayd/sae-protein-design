@@ -6,8 +6,12 @@ def main():
     ap = argparse.ArgumentParser(description="Train ML models for protein sequence scoring")
 
     # Inputs
-    ap.add_argument("sequences", help="Path to sequences CSV (can also contain 'label')")
-    ap.add_argument("--labels", help="Optional labels CSV to merge on 'id'")
+    ap.add_argument("sequences", help="Path to sequences file (.npy or .csv)")
+    ap.add_argument("--labels", help="Optional labels file (.npy or .csv)")
+    
+    # Data sampling
+    ap.add_argument("--n-samples", type=int, default=None, 
+                    help="Number of samples to use from dataset (default: use all)")
 
     # Optional split reuse/storage
     ap.add_argument("--split", help="Path to JSON file with saved train/test indices for reuse")
@@ -47,6 +51,7 @@ def main():
         stratify=a.stratify,
         k=a.k,
         max_len=a.max_len,
+        n_samples=a.n_samples,
     )
     print(json.dumps(res, indent=2))
 

@@ -43,10 +43,17 @@ def train_model(
     save_split=True,
     test_size=0.2,
     stratify="auto",
+    n_samples=None,
     **kwargs,
 ):
     Path(outdir).mkdir(parents=True,exist_ok=True)
     df=load_data(seq_file,labels_file)
+    
+    # Limit to n_samples if specified
+    if n_samples is not None and n_samples < len(df):
+        df = df.iloc[:n_samples].copy()
+        print(f"[INFO] Limited dataset to {n_samples} samples")
+    
     if task is None:
         try: pd.to_numeric(df["label"]); task="regression"
         except: task="classification"

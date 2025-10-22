@@ -23,3 +23,6 @@ runs/
 # Windows metadata
 desktop.ini.
 .vscode/
+
+#logs
+log.txt

@@ -1,5 +1,30 @@
 import pytest
 import pandas as pd
+
+
+def pytest_addoption(parser):
+    """Add command-line options for real data testing"""
+    parser.addoption(
+        "--sequences",
+        action="store",
+        default=None,
+        help="Path to real sequences file (.npy or .csv)"
+    )
+    parser.addoption(
+        "--labels",
+        action="store",
+        default=None,
+        help="Path to real labels file (.npy or .csv)"
+    )
+    parser.addoption(
+        "--n-samples",
+        action="store",
+        type=int,
+        default=None,
+        help="Number of samples to use from data (default: use all)"
+    )
+
+
 @pytest.fixture
 def tmp_seq_file(tmp_path):
     data = {
