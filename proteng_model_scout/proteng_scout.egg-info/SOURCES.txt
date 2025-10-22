@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+proteng_scout/__init__.py
+proteng_scout/aggregator.py
+proteng_scout/config.py
+proteng_scout/main.py
+proteng_scout/plotting.py
+proteng_scout/report.py
+proteng_scout/run_single.py
+proteng_scout.egg-info/PKG-INFO
+proteng_scout.egg-info/SOURCES.txt
+proteng_scout.egg-info/dependency_links.txt
+proteng_scout.egg-info/entry_points.txt
+proteng_scout.egg-info/requires.txt
+proteng_scout.egg-info/top_level.txt
