@@ -1,3 +1,6 @@
 [submodule "interplm"]
 	path = interplm
 	url = https://github.com/ElanaPearl/interPLM.git
+[submodule "proteng_model_scout"]
+	path = proteng_model_scout
+	url = https://github.com/icyjayd/model-scout.git
