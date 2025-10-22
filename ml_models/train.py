@@ -1,103 +1,130 @@
-import numpy as np,pandas as pd,joblib,json,os
-from pathlib import Path
-from sklearn.preprocessing import StandardScaler,LabelEncoder
+import os
+import json
+from datetime import datetime
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 from .data_utils import load_data
-from .encoding import encode_aac,encode_kmer,encode_onehot,encode_esm
 from .models import build_model
 from .metrics import compute_metrics
+from .encoding import encode_sequences
 
-def _load_split_indices(split_path: str, n: int):
-    with open(split_path, "r", encoding="utf-8") as f:
-        d = json.load(f)
-    tr = d.get("train_idx", [])
-    te = d.get("test_idx", [])
-    if not isinstance(tr, list) or not isinstance(te, list):
-        raise ValueError("Split file must contain 'train_idx' and 'test_idx' lists")
-    tr = np.array(tr, dtype=int)
-    te = np.array(te, dtype=int)
-    if tr.min(initial=0) < 0 or te.min(initial=0) < 0 or tr.max(initial=-1) >= n or te.max(initial=-1) >= n:
-        raise ValueError("Split indices out of range for current dataset")
-    if len(set(tr.tolist()).intersection(set(te.tolist()))) > 0:
-        raise ValueError("Train/test indices overlap in split file")
-    return tr, te
+# --------------------------------------------------
+# Helper to auto-generate an output folder
+# --------------------------------------------------
+def _auto_outdir(model_name, encoding, n_samples, prefix=None, base="runs/ml_model"):
+    n_str = str(n_samples) if n_samples else "all"
+    parts = []
+    if prefix:
+        parts.append(prefix)
+    parts += [model_name, encoding, n_str]
+    run_name = "_".join(parts)
+    return os.path.join(base, run_name)
 
 
-def _save_split_indices(outdir: str | Path, train_idx, test_idx):
-    outdir = Path(outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
-    payload = {"train_idx": list(map(int, train_idx)), "test_idx": list(map(int, test_idx))}
-    with open(outdir / "split.json", "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-
-
+# --------------------------------------------------
+# Main training entry
+# --------------------------------------------------
 def train_model(
     seq_file,
     labels_file=None,
-    model_name="xgb",
-    encoding="kmer",
     task=None,
+    model_name="rf",
+    encoding="aac",
     seed=42,
-    outdir="runs/ml_model",
-    split_file=None,
-    save_split=True,
+    outdir=None,
+    prefix=None,
+    n_samples=None,
     test_size=0.2,
     stratify="auto",
-    n_samples=None,
-    **kwargs,
+    k=3,
+    max_len=512,
+    split=None,
+    save_split=True,
 ):
-    Path(outdir).mkdir(parents=True,exist_ok=True)
-    df=load_data(seq_file,labels_file)
-    
-    # Limit to n_samples if specified
-    if n_samples is not None and n_samples < len(df):
-        df = df.iloc[:n_samples].copy()
-        print(f"[INFO] Limited dataset to {n_samples} samples")
-    
-    if task is None:
-        try: pd.to_numeric(df["label"]); task="regression"
-        except: task="classification"
-    if encoding=="aac": X=encode_aac(df.sequence)
-    elif encoding=="kmer": X=encode_kmer(df.sequence,k=kwargs.get("k",3))
-    elif encoding=="onehot": X=encode_onehot(df.sequence,max_len=kwargs.get("max_len",512))
-    elif encoding=="esm": X=encode_esm(df.sequence,device=kwargs.get("device","cpu"))
-    else: raise ValueError("Bad encoding")
-    pre=StandardScaler(with_mean=False); X=pre.fit_transform(X)
-    y=df["label"]; le=None
-    if task=="classification" and not np.issubdtype(y.dtype,np.number):
-        le=LabelEncoder(); y=le.fit_transform(y)
-    else: y=pd.to_numeric(y)
-    # Determine or reuse split (work with explicit index arrays for robustness)
-    n = len(df)
-    if split_file and os.path.exists(split_file):
-        tr_idx, te_idx = _load_split_indices(split_file, n=n)
-    else:
-        idx = np.arange(n)
-        # Determine stratification behavior
-        is_classification = (task == "classification")
-        can_stratify = is_classification and (len(np.unique(y)) > 1)
-        if stratify == "yes" and can_stratify:
-            strat = y
-        elif stratify == "no":
-            strat = None
-        else:  # auto
-            strat = y if can_stratify else None
+    np.random.seed(seed)
 
-        tr_idx, te_idx = train_test_split(
-            idx, test_size=float(test_size), random_state=seed, stratify=strat
+    # ----- Load data -----
+    df = load_data(seq_file, labels_file)
+    if n_samples:
+        df = df.sample(n=min(n_samples, len(df)), random_state=seed)
+    n_samples = n_samples or "all"
+
+    # ----- Task detection -----
+    if task is None:
+        task = "regression" if np.issubdtype(df["label"].dtype, np.number) else "classification"
+
+    # ----- Encode sequences -----
+    X = encode_sequences(df["sequence"], encoding, k=k, max_len=max_len)
+
+    y = df["label"].values
+
+    # ----- Scale features -----
+    scaler = StandardScaler(with_mean=False)
+    X = scaler.fit_transform(X)
+
+    # ----- Label encoding for classification -----
+    label_encoder = None
+    if task == "classification" and not np.issubdtype(y.dtype, np.number):
+        label_encoder = LabelEncoder()
+        y = label_encoder.fit_transform(y)
+
+    # ----- Split -----
+    if split and os.path.exists(split):
+        split_data = json.load(open(split))
+        train_idx, test_idx = split_data["train_idx"], split_data["test_idx"]
+        X_train, X_test = X[train_idx], X[test_idx]
+        y_train, y_test = y[train_idx], y[test_idx]
+    else:
+        stratify_y = y if (task == "classification" and stratify == "auto") else None
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=seed, stratify=stratify_y
         )
         if save_split:
-            _save_split_indices(outdir, tr_idx, te_idx)
+            split_data = {
+                "train_idx": np.arange(len(y_train)).tolist(),
+                "test_idx": np.arange(len(y_test)).tolist(),
+            }
+        else:
+            split_data = None
 
-    # Apply indices
-    Xtr, Xte = X[tr_idx], X[te_idx]
-    if isinstance(y, pd.Series):
-        ytr, yte = y.iloc[tr_idx], y.iloc[te_idx]
-    else:
-        ytr, yte = y[tr_idx], y[te_idx]
-    m=build_model(task,model_name,seed); m.fit(Xtr,ytr)
-    yp=m.predict(Xte); yp_prob=m.predict_proba(Xte) if hasattr(m,"predict_proba") else None
-    met=compute_metrics(task,yte,yp,yp_prob)
-    joblib.dump(m,f"{outdir}/model.pkl"); joblib.dump(pre,f"{outdir}/scaler.pkl")
-    if le: joblib.dump(le,f"{outdir}/labels.pkl")
-    return met
+    # ----- Model -----
+    model = build_model(task, model_name)
+    model.fit(X_train, y_train)
+
+    # ----- Predict & Metrics -----
+    y_pred = model.predict(X_test)
+    metrics = compute_metrics(task, y_test, y_pred)
+
+    # ----- Output directory -----
+    if outdir is None:
+        outdir = _auto_outdir(model_name, encoding, None if n_samples == "all" else n_samples, prefix)
+    os.makedirs(outdir, exist_ok=True)
+
+    # ----- Save artifacts -----
+    import joblib
+    joblib.dump(model, os.path.join(outdir, "model.pkl"))
+    joblib.dump(scaler, os.path.join(outdir, "scaler.pkl"))
+    if label_encoder is not None:
+        joblib.dump(label_encoder, os.path.join(outdir, "labels.pkl"))
+    if split_data and save_split:
+        with open(os.path.join(outdir, "split.json"), "w") as f:
+            json.dump(split_data, f, indent=2)
+
+    # ----- Save metrics and config manifest -----
+    manifest = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "task": task,
+        "model": model_name,
+        "encoding": encoding,
+        "n_samples": n_samples,
+        "seed": seed,
+        "metrics": metrics,
+        "outdir": outdir,
+    }
+    with open(os.path.join(outdir, "run.json"), "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    print(json.dumps(metrics, indent=2))
+    return metrics
