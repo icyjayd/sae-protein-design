@@ -2,7 +2,7 @@
 Parallel model scout for protein design ML pipeline.
 
 Evaluates multiple model / encoding / sample-size combinations,
-computes Spearman rho + p-value, ranks them, and auto-generates plots.
+computes Spearman rho + p-value, ranks them, and auto-generates plots + HTML report.
 """
 
 import os
@@ -94,7 +94,7 @@ def _make_plots(df_results, outdir):
     os.makedirs(outdir, exist_ok=True)
     sns.set(style="whitegrid")
 
-    # --- Heatmap of best rho per model/encoding ---
+    # Heatmap of best rho per model/encoding
     heat = (
         df_results.groupby(["model", "encoding"])["rho"]
         .max()
@@ -105,37 +105,137 @@ def _make_plots(df_results, outdir):
     sns.heatmap(heat, annot=True, fmt=".2f", cmap="viridis")
     plt.title("Best Spearman ρ per model/encoding")
     plt.tight_layout()
-    plt.savefig(os.path.join(outdir, "heatmap_rho.png"))
+    heatmap_path = os.path.join(outdir, "heatmap_rho.png")
+    plt.savefig(heatmap_path)
     plt.close()
 
-    # --- Line plot of rho vs sample size for each encoding ---
+    # Line plot: rho vs sample size
     plt.figure(figsize=(10, 6))
-    sns.lineplot(
-        data=df_results,
-        x="n_samples",
-        y="rho",
-        hue="model",
-        style="encoding",
-        markers=True,
-        dashes=False,
-    )
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        sns.lineplot(
+            data=df_results,
+            x="n_samples",
+            y="rho",
+            hue="model",
+            style="encoding",
+            markers=True,
+            dashes=False,
+        )
     plt.title("Spearman ρ vs sample size")
     plt.tight_layout()
-    plt.savefig(os.path.join(outdir, "rho_vs_samples.png"))
+    rho_vs_samples_path = os.path.join(outdir, "rho_vs_samples.png")
+    plt.savefig(rho_vs_samples_path)
     plt.close()
 
-    # --- Runtime plot ---
+    # Runtime plot
     plt.figure(figsize=(10, 6))
-    sns.barplot(
-        data=df_results.groupby("model", as_index=False)["seconds"].mean(),
-        x="model",
-        y="seconds",
-        palette="crest",
-    )
+    rt = df_results.groupby("model", as_index=False)["seconds"].mean()
+    sns.barplot(data=rt, x="model", y="seconds", palette="crest")
     plt.title("Average runtime per model (seconds)")
     plt.tight_layout()
-    plt.savefig(os.path.join(outdir, "runtime_per_model.png"))
+    runtime_path = os.path.join(outdir, "runtime_per_model.png")
+    plt.savefig(runtime_path)
     plt.close()
+
+    return {
+        "heatmap": heatmap_path,
+        "rho_vs_samples": rho_vs_samples_path,
+        "runtime": runtime_path,
+    }
+
+
+# ---------------------------------------------------------------------
+# HTML report
+# ---------------------------------------------------------------------
+def _make_html_report(outdir, plots, meta, ranked_df, df_results):
+    """
+    Create a human-friendly HTML report with summary table + plots.
+    """
+    report_dir = os.path.join(outdir, "reports")
+    os.makedirs(report_dir, exist_ok=True)
+    report_path = os.path.join(report_dir, "summary.html")
+
+    # Minimal inline CSS
+    css = """
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #111; }
+      h1 { margin-bottom: 8px; }
+      h2 { margin-top: 28px; }
+      .meta { font-size: 0.95rem; color: #444; margin-bottom: 16px; }
+      table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.95rem; }
+      th { background: #f7f7f7; }
+      .plots { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+      .card { border: 1px solid #eee; border-radius: 10px; padding: 10px; background: #fff; }
+      .thumb { width: 100%; height: auto; border-radius: 6px; border: 1px solid #eee; }
+      .small { color: #666; font-size: 0.9rem; }
+      .bad { color: #a33; }
+      .ok { color: #2a7; }
+      code { background: #f1f3f5; padding: 2px 6px; border-radius: 6px; }
+    </style>
+    """
+
+    # Ranked results table (top 20)
+    top_html = ranked_df.head(20).to_html(index=False, float_format=lambda x: f"{x:.4f}")
+
+    # Metadata block
+    meta_html = f"""
+    <div class="meta">
+      <div><b>Task:</b> {meta['task']}</div>
+      <div><b>α (p-threshold):</b> {meta['alpha']}</div>
+      <div><b>Models:</b> {", ".join(meta['models'])}</div>
+      <div><b>Encodings:</b> {", ".join(meta['encodings'])}</div>
+      <div><b>Sample grid:</b> {", ".join(map(str, meta['sample_grid']))}</div>
+      <div><b>Parallel jobs:</b> {meta['n_jobs']}</div>
+      <div><b>Total runs:</b> {len(df_results)}</div>
+    </div>
+    """
+
+    # Plots gallery
+    def rel(p): return os.path.relpath(p, report_dir).replace("\\", "/")
+    gallery = f"""
+    <div class="plots">
+      <div class="card">
+        <div><b>Best ρ per model/encoding</b></div>
+        <a href="{rel(plots['heatmap'])}" target="_blank"><img class="thumb" src="{rel(plots['heatmap'])}" alt="heatmap"/></a>
+      </div>
+      <div class="card">
+        <div><b>ρ vs sample size</b></div>
+        <a href="{rel(plots['rho_vs_samples'])}" target="_blank"><img class="thumb" src="{rel(plots['rho_vs_samples'])}" alt="rho vs samples"/></a>
+      </div>
+      <div class="card">
+        <div><b>Average runtime per model</b></div>
+        <a href="{rel(plots['runtime'])}" target="_blank"><img class="thumb" src="{rel(plots['runtime'])}" alt="runtime"/></a>
+      </div>
+    </div>
+    """
+
+    html = f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Model Scout Report</title>
+{css}
+</head>
+<body>
+  <h1>Model Scout Report</h1>
+  {meta_html}
+
+  <h2>Top configurations (ranked by Spearman ρ)</h2>
+  {top_html}
+
+  <h2>Plots</h2>
+  {gallery}
+
+  <p class="small">Files written to <code>{outdir}</code>.</p>
+</body>
+</html>
+"""
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    return report_path
 
 
 # ---------------------------------------------------------------------
@@ -181,7 +281,8 @@ def run_scout(
     Path(outdir).mkdir(parents=True, exist_ok=True)
 
     # Save raw results
-    json.dump(results, open(outpath, "w"), indent=2)
+    with open(outpath, "w") as f:
+        json.dump(results, f, indent=2)
     df_results = pd.DataFrame(results)
     df_results.to_csv(os.path.join(outdir, "model_scout_results.csv"), index=False)
 
@@ -201,12 +302,27 @@ def run_scout(
     print("\nTop configurations (Spearman ρ):")
     print(grouped.head(10).to_string(index=False))
 
-    # --- Plots ---
+    # Plots
     plot_dir = os.path.join(outdir, "plots")
-    _make_plots(df_results, plot_dir)
-    print(f"[INFO] Plots saved to: {plot_dir}")
+    plot_paths = _make_plots(df_results, plot_dir)
 
-    # --- Combined output ---
+    # HTML report
+    report_path = _make_html_report(
+        outdir=outdir,
+        plots=plot_paths,
+        meta={
+            "alpha": alpha,
+            "models": models,
+            "encodings": encodings,
+            "sample_grid": sample_grid,
+            "n_jobs": n_jobs,
+            "task": task,
+        },
+        ranked_df=grouped,
+        df_results=df_results,
+    )
+
+    # Combined output
     final = {
         "alpha": alpha,
         "models_tested": models,
@@ -217,10 +333,13 @@ def run_scout(
         "ranked_results": grouped.to_dict(orient="records"),
         "all_results": results,
         "plot_dir": plot_dir,
+        "html_report": report_path,
     }
     with open(outpath, "w") as f:
         json.dump(final, f, indent=2)
 
+    print(f"[INFO] Plots saved to: {plot_dir}")
+    print(f"[INFO] HTML report: {report_path}")
     print(f"[INFO] Results saved to: {outpath}")
     return final
 
@@ -231,7 +350,7 @@ def run_scout(
 if __name__ == "__main__":
     import argparse
 
-    ap = argparse.ArgumentParser(description="Parallel model scout with automatic plots.")
+    ap = argparse.ArgumentParser(description="Parallel model scout with automatic plots & HTML report.")
     ap.add_argument("sequences", type=str)
     ap.add_argument("--labels", type=str, default=None)
     ap.add_argument("--models", type=str, default=",".join(DEFAULT_MODELS))
