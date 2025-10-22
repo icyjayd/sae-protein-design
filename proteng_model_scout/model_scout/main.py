@@ -1,12 +1,12 @@
 # --- Auto-detect your repo root so we can import ml_models.* ---
-import sys
-from pathlib import Path
-if "ml_models" not in sys.modules:
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "ml_models").exists():
-            sys.path.insert(0, str(parent))
-            break
+# import sys
+# from pathlib import Path
+# if "ml_models" not in sys.modules:
+#     here = Path(__file__).resolve()
+#     for parent in here.parents:
+#         if (parent / "ml_models").exists():
+#             sys.path.insert(0, str(parent))
+#             break
 # ---------------------------------------------------------------
 
 import os, json
@@ -20,7 +20,7 @@ from .run_single import run_single
 from .aggregator import save_results, rank_results
 from .plotting import make_plots
 from .report import make_html_report
-from ml_models.data_utils import load_data  # from your main project
+from .data_utils import load_data  # from your main project
 
 def run_scout(
     seq_file,
@@ -38,11 +38,22 @@ def run_scout(
     print(f"[INFO] Starting model scout using {n_jobs} parallel jobs")
 
     df = load_data(seq_file, labels_file)
+    
     if not df["label"].dtype.kind in "if":
         df["label"] = LabelEncoder().fit_transform(df["label"])
         task = "classification"
     else:
         task = "regression"
+    # --- Sanity check: preview first 10 sequences and labels ---
+    try:
+        n_preview = min(10, len(df))
+        seq_preview = [str(s)[:10] for s in df["sequence"].head(n_preview)]
+        label_preview = df["label"].head(n_preview).tolist()
+        print("[INFO] Data preview (first 10):")
+        for i, (seq, label) in enumerate(zip(seq_preview, label_preview)):
+            print(f"  {i+1:2d}. {seq:<12} → {label}")
+    except Exception as e:
+        print(f"[WARN] Could not preview sequences/labels: {e}")
 
     combos = [
         (m, e, n)

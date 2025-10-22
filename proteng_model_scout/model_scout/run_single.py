@@ -5,11 +5,25 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 # Import project modules (ml_models.*) at runtime; main.py ensures sys.path includes project root.
-from ml_models.encoding import encode_sequences
-from ml_models.models import build_model
+from .encoding import encode_sequences
+from .models import build_model
 
-def _spearman(y_true, y_pred):
-    rho, p = spearmanr(y_true, y_pred)
+import warnings
+from scipy.stats import spearmanr, ConstantInputWarning
+
+def _spearman(y_true, y_pred, context=None):
+    """Compute Spearman ρ, catching constant-input warnings."""
+    with warnings.catch_warnings(record=True) as wlist:
+        warnings.simplefilter("always", ConstantInputWarning)
+        rho, p = spearmanr(y_true, y_pred)
+
+    if any(issubclass(w.category, ConstantInputWarning) for w in wlist):
+        msg = "[WARN] ConstantInputWarning"
+        if context:
+            msg += f" for model={context.get('model')} encoding={context.get('encoding')} n_samples={context.get('n_samples')}"
+        print(msg)
+        rho, p = 0.0, 1.0  # force safe defaults
+
     if np.isnan(rho): rho = 0.0
     if np.isnan(p): p = 1.0
     return float(rho), float(p)
@@ -34,7 +48,11 @@ def run_single(model_name, encoding, n_samples, df, task, seed, test_size, strat
         ypred = model.predict(Xte)
         seconds = round(time.time() - t0, 3)
 
-        rho, p = _spearman(yte, ypred)
+        rho, p = _spearman(
+            yte,
+            ypred,
+            context={"model": model_name, "encoding": encoding, "n_samples": n_samples},
+        )
         return {
             "model": model_name, "encoding": encoding, "n_samples": int(n_samples),
             "rho": rho, "p": p, "seconds": seconds, "status": "ok"

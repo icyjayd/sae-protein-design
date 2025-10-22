@@ -1,9 +1,12 @@
+[project.scripts]
+model-scout = "model_scout.main:cli_entry"
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "proteng-scout"
+name = "model-scout"
 version = "0.1.0"
 description = "Parallel model scouting with plots and HTML report; auto-detects project ml_models"
 authors = [{ name = "Protein Engineering" }]
@@ -19,5 +22,3 @@ dependencies = [
   "seaborn"
 ]
 
-[project.scripts]
-model-scout = "proteng_scout.main:cli_entry"

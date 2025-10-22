@@ -1,5 +1,5 @@
 Metadata-Version: 2.4
-Name: proteng-scout
+Name: model-scout
 Version: 0.1.0
 Summary: Parallel model scouting with plots and HTML report; auto-detects project ml_models
 Author: Protein Engineering
