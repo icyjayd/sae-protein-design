@@ -45,28 +45,21 @@ def _meta_path(encoding, key, base="runs/cache"):
 def _maybe_load_cache(encoding, key, n_request, base="runs/cache"):
     npy_path = _cache_path(encoding, key, base)
     meta_path = _meta_path(encoding, key, base)
-    print(f"[DEBUG] maybe_load_cache key={key} n_request={n_request}")
     if not (os.path.isfile(npy_path) and os.path.isfile(meta_path)):
-        print("[DEBUG]  no existing cache files")
         return None
     try:
         meta = json.load(open(meta_path))
         total_cached = meta.get("n_sequences", 0)
-        print(f"[DEBUG]  found cache with n_cached={total_cached}")
         if total_cached >= n_request:
-            print("[DEBUG]  loading subset from cache")
             arr = np.load(npy_path, mmap_mode="r")
             return np.array(arr[:n_request])
-        print("[DEBUG]  cache too small, forcing recompute")
     except Exception as e:
-        print(f"[DEBUG]  error loading cache: {e}")
         return None
     return None
 
 
 def _save_cache(encoding, key, arr, base="runs/cache"):
     path = _cache_path(encoding, key, base)
-    print(f"[DEBUG] save_cache key={key} n={len(arr)} path={path}")
     np.save(path, arr)
     meta_path = _meta_path(encoding, key, base)
     with open(meta_path, "w") as f:
