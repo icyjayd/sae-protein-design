@@ -1,7 +1,7 @@
 [submodule "interplm"]
 	path = interplm
 	url = https://github.com/ElanaPearl/interPLM.git
-[submodule "proteng_model_scout"]
-	path = proteng_model_scout
+[submodule "model-scout"]
+	path = model-scout
 	url = https://github.com/icyjayd/model-scout.git
 	branch = main
