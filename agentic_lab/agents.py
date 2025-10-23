@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Dict, List, Any
 from pathlib import Path
+
+from interplm.interplm import sae
 from .schema import SequenceRecord, ExperimentConfig, EditPlan, Scores, TrialResult, Memory
 from . import tools
 
@@ -27,7 +29,7 @@ class EngineerAgent:
     def run_trial(self, seq: SequenceRecord, plan: EditPlan) -> TrialResult:
         base_latent = tools.encode_sequence(seq.sequence, self.cfg.latent_dim)
         edited_latent = tools.perturb_latent(base_latent, plan.dim, plan.delta)
-        edited_seq = tools.decode_latent(edited_latent)
+        edited_seq = sae.perturb_and_decode(seq.sequence, dim=plan["dim"], delta=plan["delta"])
 
         # Scores
         stab, fold, plaus = tools.score_sequence(edited_seq)

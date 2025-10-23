@@ -4,3 +4,4 @@
 [submodule "proteng_model_scout"]
 	path = proteng_model_scout
 	url = https://github.com/icyjayd/model-scout.git
+	branch = main
