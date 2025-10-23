@@ -1,3 +1,4 @@
+
 # 🧬 SAE Protein Design
 
 ### **AI-driven discovery in protein sequence space**
@@ -18,17 +19,23 @@ The goal: **controllable protein engineering** — guiding sequence generation t
 | **Agentic Lab** | Orchestrates iterative experiments through autonomous agent loops. |
 | **Scoring pipeline** | Evaluates synthetic sequences via internal ML models (e.g., Random Forest regressors). |
 | **Diagnostics** | Provides metrics, run tracking, and codirectionality analyses. |
+| **Model Scout (submodule)** | Benchmarks ML models automatically to find optimal predictors and encodings. |
 
 ---
 
 ## ⚙️ Installation
 
 ```bash
-git clone https://github.com/icyjayd/sae-protein-design.git
+git clone --recurse-submodules https://github.com/icyjayd/sae-protein-design.git
 cd sae-protein-design
 conda create -n sae python=3.10
 conda activate sae
 pip install -r requirements.txt
+```
+
+If you’ve already cloned without submodules:
+```bash
+git submodule update --init --recursive
 ```
 
 ---
@@ -39,107 +46,95 @@ pip install -r requirements.txt
 The `sae/` module trains sparse autoencoders on embeddings from pretrained protein models (e.g., ESM).  
 These SAEs discover interpretable latent axes that often correspond to functional or structural protein features.
 
-- `sae/train.py` — trains the SAE model.  
-- `sae/extract_from_hf_model.py` — extracts ESM activations for downstream use.  
-- `sae/extract_codes.py` — encodes sequences into sparse latent vectors.  
-
 ### 2. **Latent Steering & Generation**
-By perturbing specific latent dimensions and decoding back to sequence space, the system can test whether a direction correlates with a property change (like binding energy).
-
-- `sae/latent_traversal.py` — generates perturbations along chosen latents.  
-- `sae/optimize_latent.py` — performs targeted optimization or traversal.  
-- `sae/steer_latent_tool.py` — provides a CLI-style interface for automated experiments.
+Perturb latent dimensions and decode to sequence space to explore causal property directions.
 
 ### 3. **Predictive Scoring**
-The `ml_models/` package contains lightweight ML pipelines that predict protein properties directly from sequences or latent codes.
-
-- `ml_models/train.py` — trains property predictors (e.g., random forest regressors).  
-- `ml_models/encoding.py` — handles sequence embeddings.  
-- `ml_models/metrics.py` — evaluates predictive performance.  
-- `ml_models/cli_train.py` — provides a command-line training interface.
+The `ml_models/` package trains lightweight predictors (e.g., random forests, ridge regression) for scoring protein properties.
 
 ### 4. **Agentic Experimentation**
-The `agentic_lab/` module is an early prototype of a self-directed experimental loop.  
-It can run iterative optimization routines that test, score, and adjust candidate sequences using agents that plan, critique, and improve runs.
-
-- `agentic_lab/agents.py` — defines modular AI agents for planning and analysis.  
-- `agentic_lab/loop.py` — orchestrates agent interactions and state transitions.  
-- `agentic_lab/run_demo.py` — runs a minimal working demo of the full loop.  
+The `agentic_lab/` module runs autonomous feedback loops that test and optimize sequences.
 
 ### 5. **Diagnostics & Tracking**
-The `diagnostics/` and `runs/` directories store experiment logs and output artifacts.  
-Each run records metrics, predictions, and latent statistics in structured JSONs (`memory.json`) for reproducibility and post-hoc analysis.
+All experiments log structured metadata under `/runs`, enabling full reproducibility and comparison.
 
 ---
 
-## 🧩 Example Workflow
+## 🧩 Model Scout Submodule
 
-### 🔹 Step 1 — Extract embeddings
+### 🔹 Overview
+[`model-scout`](https://github.com/icyjayd/model-scout) is an independent benchmarking toolkit integrated as a submodule.  
+It systematically tests combinations of models, encodings, and sample sizes to determine which predictive setup performs best on a given dataset.
+
+### 🔹 Core features
+- Unified CLI (`model-scout.exe`) for running full model sweeps  
+- Automatic handling of encodings (`aac`, `kmer`, `onehot`, etc.)  
+- Parallelized multi-model testing (`--jobs N`)  
+- Built-in Spearman correlation metrics with intelligent warning handling  
+- Easy integration into any ML or protein design workflow
+
+### 🔹 Example usage
+From the project root:
 ```bash
-python sae/extract_from_hf_model.py --model esm2_t33_650M_UR50D --sequences data/gb1.fasta
+model-scout data/GB1_sequences.npy --labels data/GB1_labels.npy --models rf ridge svr --encodings aac kmer --n-samples 1000 5000 all --jobs 5
 ```
 
-### 🔹 Step 2 — Train a sparse autoencoder
-```bash
-python sae/train.py --input activations.npy --output sae_model.pt
-```
+This will:
+- Preview the first 10 sequences and labels  
+- Train all combinations of models and encodings  
+- Report Spearman ρ, p-value, and timing per run  
+- Save results automatically under `/runs/model-scout/`
 
-### 🔹 Step 3 — Train a property predictor
+### 🔹 Updating the submodule
+To pull the latest version of Model Scout:
 ```bash
-python ml_models/train.py --data dataset.csv --labels binding_scores.csv
-```
-
-### 🔹 Step 4 — Perturb latent features and generate sequences
-```bash
-python sae/latent_traversal.py --model sae_model.pt --latents 12 42 85
-```
-
-### 🔹 Step 5 — Score synthetic sequences
-```bash
-python scoring/evaluate_sequences.py --model rf_model.pkl --input generated_sequences.fasta
+git submodule update --remote --merge
 ```
 
 ---
 
 ## 🧪 Current Research Focus
-
-- Validating **codirectionality** between latent perturbations and model-predicted binding scores.  
-- Testing whether SAEs encode **causal** features that can guide controllable property optimization.  
-- Developing **agentic orchestration** that automatically proposes and evaluates new latent experiments.
+- Validating **codirectionality** between latent perturbations and predicted binding scores  
+- Testing whether SAEs encode **causal** features for controllable property optimization  
+- Using **Model Scout** to discover optimal predictive models for new protein datasets
 
 ---
 
 ## 📊 Output Artifacts
+
 | Path | Description |
 |------|--------------|
-| `runs/*/memory.json` | Tracks all parameters, metrics, and agent decisions per run. |
-| `sae/outputs/` | Generated latent codes, reconstructions, and visualizations. |
-| `diagnostics/` | Plots and metrics for model debugging. |
+| `runs/*/memory.json` | Experiment metadata and metrics |
+| `sae/outputs/` | Generated codes and reconstructions |
+| `diagnostics/` | Analysis and plots |
+| `proteng_model_scout/` | Submodule containing Model Scout package |
 
 ---
 
 ## 🧰 CLI and Integration
-Many scripts can be run standalone or through an integrated agentic workflow:
-
+Many scripts can be run standalone or orchestrated via agents:
 ```bash
 python agentic_lab/run_demo.py
 ```
 
-The demo agent trains, tests, and scores models autonomously, logging its reasoning and results in `/runs`.
+The integrated pipeline now also supports direct model benchmarking:
+```bash
+model-scout data/GB1_sequences.npy --labels data/GB1_labels.npy --jobs 5
+```
 
 ---
 
 ## 🧭 Roadmap
 
-- [ ] Integrate structure prediction (e.g., via AlphaFold or ESMFold) for 3D validation.  
-- [ ] Extend scoring to wet-lab-compatible ΔΔG and stability metrics.  
-- [ ] Refine agentic control loop for closed-loop protein optimization.  
-- [ ] Implement visualization dashboard for latent and property space trajectories.  
+- [ ] Integrate structure prediction for 3D validation  
+- [ ] Extend scoring to wet-lab-compatible ΔΔG metrics  
+- [ ] Enhance agentic control loop for closed-loop optimization  
+- [ ] Visualize Model Scout benchmarks in a live dashboard  
 
 ---
 
 ## 🧑‍🔬 Citation
 
-If you use or extend this work, please cite it as:
+If you use or extend this work, please cite:
 
 > Irizarry-Cole, J. (2025). *SAE Protein Design: Agentic latent-space control for interpretable protein engineering.*
