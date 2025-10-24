@@ -1,124 +1,136 @@
-# sae/utils/esm_utils.py
+"""
+ESM Utilities for Per-Token SAE Perturbation.
 
-# --- FIX: Import EsmForMaskedLM, which includes the lm_head for decoding ---
-from transformers import EsmForMaskedLM, EsmTokenizer
+This file provides the core functions for:
+1. Loading the ESM model (with LM head) and tokenizer.
+2. Encoding a sequence into per-token representations.
+3. Running the full "Encode -> Perturb -> Decode" pipeline
+   on a per-token basis.
+"""
+
 import torch
+from transformers import EsmTokenizer, EsmForMaskedLM
+from typing import Dict, Optional, List
 
-def load_esm2_model(model_name="facebook/esm2_t6_8M_UR50D", device="cpu"):
+# --- 1. Model Loading ---
+
+def load_esm2_model(model_name: str = "facebook/esm2_t6_8M_UR50D", device: str = "cpu"):
     """
-    Loads the ESM model *for Masked LM* (which includes the lm_head)
-    and tokenizer.
+    Loads the ESM model *with LM head* and tokenizer.
+    The LM head is essential for decoding token embeddings back to logits.
     """
     tokenizer = EsmTokenizer.from_pretrained(model_name)
-    # --- FIX: Load EsmForMaskedLM ---
     model = EsmForMaskedLM.from_pretrained(model_name)
     model.to(device)
     model.eval()
     return model, tokenizer
 
-def encode_sequence(sequence, model, tokenizer, device="cpu"):
+# --- 2. Encoding ---
+
+def encode_sequence(sequence: str, model: EsmForMaskedLM, tokenizer: EsmTokenizer, device: str = "cpu"):
     """
-    Returns embedding (L x D) and pooled representation (D,)
-    Note: L includes <cls> and <eos> tokens.
+    Encodes a sequence into per-token representations.
+    
+    Returns:
+        token_reps: (L, D) tensor of token representations (no batch dim).
+        pooled: (D,) tensor of mean-pooled representation.
     """
     inputs = tokenizer(sequence, return_tensors="pt", add_special_tokens=True)
     inputs = {k: v.to(device) for k, v in inputs.items()}
     with torch.no_grad():
         outputs = model(**inputs, output_hidden_states=True)
-        # use the last hidden state (before LM head)
-        # This is (batch, L, D), so we squeeze batch dim
-        token_reps = outputs.hidden_states[-1].squeeze(0) 
+        # We use the *last* hidden state, which is what the LM head sees
+        token_reps = outputs.hidden_states[-1].squeeze(0)
     
-    # Return token reps *and* mean-pooled reps
-    # We pool over the sequence dim (0), ignoring <cls> and <eos>
-    pooled = token_reps[1:-1].mean(dim=0) 
+    # Pooled representation (ignoring special tokens)
+    pooled = token_reps[1:-1].mean(dim=0)
     return token_reps, pooled
 
-def decode_activation(activation, projection_weights):
-    """
-    Reconstruct the input (approximate sequence embedding) from latent activation.
-    activation: (latent_dim,) tensor
-    projection_weights: (latent_dim x d_model) numpy or torch tensor
-    Returns: (d_model,) vector
-    """
-    if not torch.is_tensor(projection_weights):
-        projection_weights = torch.tensor(projection_weights)
-    
-    # Simple linear projection
-    # This assumes the activation is post-bias and post-ReLU
-    # This is likely an incomplete/approximate decode
-    recon = torch.matmul(activation, projection_weights)
-    return recon
+# --- 3. Perturbation and Decoding ---
 
+# TODO: Implement position-wise (surgical) perturbation.
+# The current `perturbations` dict applies a global delta to the
+# specified latent dim across *all* tokens in the sequence.
+# A more advanced version would allow specifying *which*
+# tokens (i.e., sequence positions) to perturb, e.g.,
+# by also passing a `target_positions: List[int]` argument.
+# This would allow for more targeted, intelligent design based on
+# per-token latent activations.
 
-# --- NEW STATELESS FUNCTION (from agentic_adapter.py) ---
 def perturb_and_decode(
     sequence: str,
-    dim: int,
-    delta: float,
+    sae_model: torch.nn.Module,
     esm_model: EsmForMaskedLM,
     tokenizer: EsmTokenizer,
-    sae_model: torch.nn.Module,
+    perturbations: Optional[Dict[int, float]] = None,
     device: str = "cpu"
 ) -> str:
     """
-    Stateless version of the logic from agentic_adapter.RealSAE.
+    Performs a full per-token encode -> perturb -> decode pipeline.
     
-    Performs a full, per-token encode -> perturb -> decode loop.
-    
+    This function is a stateless version of the logic found in
+    the RealSAE.perturb_and_decode method.
+
     Args:
-        sequence: The starting protein sequence (string).
-        dim: The index of the latent feature to perturb.
-        delta: The amount to add to the latent feature.
-        esm_model: The trained ESM *ForMaskedLM* model (must have .lm_head).
-        tokenizer: The ESM tokenizer.
-        sae_model: The trained SAE model (with .encoder and .decoder).
-        device: The device to run on ('cpu' or 'cuda').
+        sequence: The input protein sequence string.
+        sae_model: The trained SAE model.
+        esm_model: The ESM2 model (must have LM head).
+        tokenizer: The ESM2 tokenizer.
+        perturbations: A dictionary mapping latent_index -> delta_strength.
+                       e.g., {4092: 10.0, 1024: -5.0}
+                       If None or empty, performs reconstruction.
+        device: The device to run on ('cuda' or 'cpu').
 
     Returns:
-        A new, decoded protein sequence (string).
+        The decoded protein sequence string.
     """
-    
-    # 1. ENCODE SEQUENCE (per-token)
-    # token_reps shape is (L, D), where L = sequence_len + 2
+    if perturbations is None:
+        perturbations = {}
+
+    # 1. ENCODE SEQUENCE (Per-Token)
+    # token_reps is (L, D), where L = len(sequence) + 2 (for <cls> and <eos>)
     token_reps, _ = encode_sequence(sequence, esm_model, tokenizer, device=device)
     L = token_reps.shape[0]
 
-    reconstructed_tokens = []
+    reconstructed_token_embeddings = []
     
-    # 2. PER-TOKEN SAE ENCODE/DECODE LOOP
-    # We iterate from 1 to L-1 to skip <cls> and <eos> tokens
+    # We iterate over the *real* tokens, skipping <cls> and <eos>
     for i in range(1, L - 1):
-        token_vec = token_reps[i].unsqueeze(0)  # (1, hidden_dim)
+        token_vec = token_reps[i].unsqueeze(0)  # (1, D)
         
-        # 3. SAE ENCODE
-        latent = sae_model.encode(token_vec)
+        # 2. ENCODE TOKEN (SAE)
+        # Pass token embedding through SAE
+        latent = sae_model.encode(token_vec) # (1, d_sae)
+        # 3. PERTURB LATENT
+        if perturbations:
+            for dim, delta in perturbations.items():
+                if dim < latent.shape[-1]:
+                    latent[0, dim] += delta
 
-        # 4. PERTURBATION
-        # apply perturbation if requested
-        if delta != 0.0 and dim < latent.shape[-1]:
-            latent[0, dim] += delta
+        # 4. DECODE TOKEN (SAE)
+        # Reconstruct token embedding from (potentially perturbed) latent
+        recon_token_embedding = sae_model.decode(latent) # (1, D)
+        reconstructed_token_embeddings.append(recon_token_embedding.squeeze(0))
 
-        # 5. SAE DECODE
-        recon = sae_model.decode(latent).squeeze(0) # Squeeze batch dim
-        reconstructed_tokens.append(recon)
+    # We now have a list of (L-2) reconstructed token embeddings
+    reconstructed_embeddings = torch.stack(reconstructed_token_embeddings).detach()  # (L-2, D)
 
-    # Stack all reconstructed token embeddings
-    # Shape becomes (L-2, hidden_dim)
-    reconstructed = torch.stack(reconstructed_tokens).detach()
-
-    # 6. ESM DECODE (to text)
-    # Use the ESM model's LM-head to get logits from embeddings
+    # 5. DECODE SEQUENCE (ESM LM Head)
     with torch.no_grad():
-        logits = esm_model.lm_head(reconstructed)
-        predicted_ids = torch.argmax(logits, dim=-1)
+        # Pass the (L-2, D) tensor through the LM head to get logits
+        logits = esm_model.lm_head(reconstructed_embeddings) # (L-2, vocab_size)
         
-        # Convert token IDs back to a string
+        # Get the most likely token ID for each position
+        predicted_ids = torch.argmax(logits, dim=-1) # (L-2,)
+        
+        # Convert token IDs back to token strings
         predicted_tokens = tokenizer.convert_ids_to_tokens(predicted_ids.tolist())
         
-        # Filter out special tokens
+        # Join tokens into a final sequence, filtering out special tokens
+        # (though they shouldn't be here since we skipped <cls> and <eos>)
         decoded_seq = "".join(
             [tok for tok in predicted_tokens if tok not in {"<cls>", "<eos>", "<pad>", "<mask>"}]
         )
 
     return decoded_seq
+
