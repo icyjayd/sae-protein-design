@@ -154,50 +154,75 @@ def encode_whole_sequence(sequence: str, model, tokenizer, device: str = "cpu", 
     
     return token_reps, pooled
     
+
 def perturb_and_decode_whole(
     sequence: str,
     sae_model: torch.nn.Module,
-    esm_model: EsmForMaskedLM,
-    tokenizer: EsmTokenizer,
+    decoder: torch.nn.Module,
+    tokenizer,
     latent_deltas: Optional[Dict[int, float]] = None,
-    device: str = "cpu"
+    device: str = "cpu",
+    max_len: Optional[int] = None,
 ) -> str:
     """
-    Encode -> Perturb -> Decode using *the mean activation vector*.
-    Allows testing true causal control over individual latents globally.
+    Encode -> Perturb -> Decode using the SAE latent and a provided decoder.
+
+    This version decodes the *entire sequence at once* using a trained decoder
+    (e.g. Transformer or GRU), rather than repeating a single embedding.
 
     Args:
-        sequence: Protein sequence string.
-        sae_model: Trained SAE model.
-        esm_model: ESM2 model (with LM head).
-        tokenizer: ESM2 tokenizer.
-        latent_deltas: {latent_index: delta_value} for global perturbation.
-        device: 'cpu' or 'cuda'.
+        sequence: Input protein sequence string.
+        sae_model: Trained SAE encoder/decoder (must have .encode()).
+        decoder: Trained latent->sequence decoder model (GRU, Transformer, etc.).
+        tokenizer: ESM tokenizer for amino acid vocabulary mapping.
+        latent_deltas: {latent_index: delta_value} for perturbation.
+        device: Torch device ('cpu' or 'cuda').
+        max_len: Optional override for output sequence length.
 
     Returns:
-        Reconstructed protein sequence string.
+        Decoded protein sequence string.
     """
     latent_deltas = latent_deltas or {}
 
-    _, pooled = encode_whole_sequence(sequence, esm_model, tokenizer, device=device)
+    # --- Encode the sequence into pooled embedding ---
+    # pooled: (D,)  → single-sequence pooled embedding (ESM output)
+    _, pooled = encode_whole_sequence(sequence, sae_model.esm_model, tokenizer, device=device)
+    pooled = pooled.to(device)
 
     with torch.no_grad():
+        # --- SAE encode ---
+        # latent: (1, latent_dim)
         latent = sae_model.encode(pooled.unsqueeze(0))
 
+        # --- Apply latent perturbations (in-place) ---
+        # Iterate over indices to modify the latent vector directly
         for dim, delta in latent_deltas.items():
             if dim < latent.shape[-1]:
                 latent[0, dim] += delta
 
-        recon_embedding = sae_model.decode(latent)  # (1, D)
-        L = len(sequence)
-        recon_matrix = recon_embedding.repeat(L, 1)  # (L, D)
+        # --- Decode the full sequence using the provided decoder ---
+        # L = desired sequence length (default: input length)
+        L = len(sequence) if max_len is None else max_len
 
-        logits = esm_model.lm_head(recon_matrix)
-        predicted_ids = torch.argmax(logits, dim=-1)
-        predicted_tokens = tokenizer.convert_ids_to_tokens(predicted_ids.tolist())
+        # start_tokens: (1, L)
+        # These are dummy tokens used for positional context or teacher forcing.
+        # For unconditional decoding, they can be zeros (PAD or start tokens).
+        start_tokens = torch.zeros((1, L), dtype=torch.long, device=device)
 
+        # logits: (1, L, vocab_size)
+        # Decoder outputs logits for each token position and vocabulary class.
+        logits = decoder(latent, target_seq=start_tokens, teacher_forcing=0.0, max_len=L)
+
+        # pred_ids: list of length L
+        # argmax over vocabulary dimension gives integer token IDs.
+        pred_ids = torch.argmax(logits.squeeze(0), dim=-1).tolist()
+
+        # pred_tokens: list of string tokens, length L
+        pred_tokens = tokenizer.convert_ids_to_tokens(pred_ids)
+
+        # decoded_seq: string of amino acids (filtered)
         decoded_seq = "".join(
-            [tok for tok in predicted_tokens if tok not in {"<cls>", "<eos>", "<pad>", "<mask>"}]
+            [tok for tok in pred_tokens if tok not in {"<cls>", "<eos>", "<pad>", "<mask>"}]
         )
 
     return decoded_seq
