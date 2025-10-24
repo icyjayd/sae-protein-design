@@ -8,7 +8,7 @@ import sys
 import subprocess
 import platform
 import importlib
-import os
+from pathlib import Path
 
 TORCH_VERSION = "2.7.1"
 
@@ -108,39 +108,88 @@ def _install_torch_variant():
 # ---------------------------------------------------------------------
 # EXTRAS INSTALLER (interPLM + model-scout)
 # ---------------------------------------------------------------------
+
+def _repo_is_up_to_date(repo_dir: Path):
+    """Return True if the local repo exists and is up to date with origin/HEAD."""
+    if not repo_dir.exists():
+        return False
+    try:
+        local_hash = subprocess.check_output(
+            ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
+            text=True
+        ).strip()
+        remote_hash = subprocess.check_output(
+            ["git", "-C", str(repo_dir), "ls-remote", "origin", "HEAD"],
+            text=True
+        ).split()[0]
+        return local_hash == remote_hash
+    except Exception:
+        return False
+
+
+def _is_editable_install(pkg_name: str, repo_dir: Path) -> bool:
+    """Check if a package is already installed in editable mode from this directory."""
+    try:
+        import pkg_resources
+        dist = pkg_resources.get_distribution(pkg_name)
+        location = Path(dist.location)
+        # For editable installs, "location" is the repo root
+        return repo_dir.resolve() in location.resolve().parents or location.resolve() == repo_dir.resolve()
+    except Exception:
+        return False
+
+
 def _install_extras():
-    """Install additional dependencies and local submodules (interPLM, model-scout)."""
-    repo_url = "https://github.com/ElanaPearl/interPLM.git"
-    repo_dir = os.path.join(os.getcwd(), "interPLM")
+    """Smart installer for interPLM and model-scout (only reinstall if missing or outdated)."""
+    print("[extra-installer] Checking interPLM and model-scout...")
 
-    # --- Install interPLM ---
-    try:
-        if not os.path.exists(repo_dir):
-            print(f"[extra-installer] Cloning interPLM from {repo_url}...")
-            _run(["git", "clone", repo_url, repo_dir])
-        else:
-            print("[extra-installer] interPLM repo already exists — pulling latest changes...")
-            _run(["git", "-C", repo_dir, "pull"])
+    repos = [
+        {
+            "name": "interplm",
+            "pkg_name": "interplm",
+            "url": "https://github.com/ElanaPearl/interPLM.git",
+            "dir": Path.cwd() / "interPLM",
+        },
+        {
+            "name": "model-scout",
+            "pkg_name": "model-scout",
+            "url": "https://github.com/icyjayd/model-scout.git",
+            "dir": Path.cwd() / "model-scout",
+        },
+    ]
 
-        print("[extra-installer] Installing interPLM in editable mode...")
-        _run([sys.executable, "-m", "pip", "install", "-e", repo_dir])
+    for repo in repos:
+        repo_dir = repo["dir"]
+        pkg_name = repo["pkg_name"]
+        url = repo["url"]
 
-    except Exception as e:
-        print(f"[extra-installer] Warning: failed to install interPLM: {e}")
+        try:
+            if _is_editable_install(pkg_name, repo_dir) and _repo_is_up_to_date(repo_dir):
+                print(f"[extra-installer] {pkg_name} is already installed and up to date — skipping.")
+                continue
 
-    # --- Install model-scout submodule ---
-    try:
-        print("[extra-installer] Installing local submodule model-scout...")
-        _run([sys.executable, "-m", "pip", "install", "-e", "model-scout"])
-    except Exception as e:
-        print(f"[extra-installer] Warning: failed to install model-scout: {e}")
+            if repo_dir.exists():
+                if not _repo_is_up_to_date(repo_dir):
+                    print(f"[extra-installer] Updating {pkg_name}...")
+                    subprocess.check_call(["git", "-C", str(repo_dir), "pull"])
+                else:
+                    print(f"[extra-installer] {pkg_name} exists but not installed — installing in editable mode...")
+            else:
+                print(f"[extra-installer] Cloning {pkg_name} from {url}...")
+                subprocess.check_call(["git", "clone", url, str(repo_dir)])
 
-from poetry.plugins.plugin import Plugin
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", str(repo_dir)])
+            print(f"[extra-installer] {pkg_name} installation complete.")
 
-class SAEProteinDesignInstaller(Plugin):
-    def activate(self, poetry, io):
-        """Poetry automatically calls this when loading the plugin."""
-        print("[installer] Running SAE-protein-design install hooks...")
-        _install_torch_variant()
-        _install_extras()
-        print("[installer] Environment setup complete.")
+        except Exception as e:
+            print(f"[extra-installer] Warning: failed to install {pkg_name}: {e}")
+
+# from poetry.plugins.plugin import Plugin
+
+# class SAEProteinDesignInstaller(Plugin):
+#     def activate(self, poetry, io):
+#         """Poetry automatically calls this when loading the plugin."""
+#         print("[installer] Running SAE-protein-design install hooks...")
+#         _install_torch_variant()
+#         _install_extras()
+#         print("[installer] Environment setup complete.")
