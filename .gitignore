@@ -31,3 +31,5 @@ testlog.txt
 
 #Decoder
 decoder_cache/
+
+requirements.txt
