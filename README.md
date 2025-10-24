@@ -1,4 +1,3 @@
-
 # 🧬 SAE Protein Design
 
 ### **AI-driven discovery in protein sequence space**
@@ -30,12 +29,52 @@ git clone --recurse-submodules https://github.com/icyjayd/sae-protein-design.git
 cd sae-protein-design
 conda create -n sae python=3.10
 conda activate sae
-pip install -r requirements.txt
 ```
 
 If you’ve already cloned without submodules:
 ```bash
 git submodule update --init --recursive
+```
+
+---
+
+## 🚀 Environment Setup (Recommended)
+
+After activating your environment, run the appropriate setup script for your operating system to automatically:
+
+- Install all Poetry dependencies  
+- Detect and install the correct **PyTorch** variant (CUDA / MPS / ROCm / CPU)  
+- Clone and install **interPLM**  
+- Install the **model-scout** submodule in editable mode  
+
+### 🪟 **Windows (PowerShell)**
+```powershell
+.\setup.ps1
+```
+
+### 🐧 **macOS / Linux (bash/zsh)**
+```bash
+./setup.sh
+```
+
+These scripts are functionally equivalent and execute:
+
+```bash
+poetry install
+poetry run python -m install_hooks
+```
+
+to build and configure the full environment automatically.
+
+---
+
+### 🧩 Manual Alternative
+If you prefer not to use the setup scripts, you can run the same steps manually:
+
+```bash
+pip install poetry
+poetry install
+poetry run python -m install_hooks
 ```
 
 ---

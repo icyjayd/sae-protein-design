@@ -157,3 +157,5 @@ requires = [
 sae_protein_design_installer = "install_hooks"
 
 build-backend = "poetry.core.masonry.api"
+[tool.poetry.dependencies]
+torch = "*"

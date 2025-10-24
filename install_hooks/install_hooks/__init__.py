@@ -10,7 +10,7 @@ import platform
 import importlib
 import os
 
-TORCH_VERSION = "2.4.0"
+TORCH_VERSION = "2.7.1"
 
 
 def _run(cmd):
