@@ -25,11 +25,20 @@ import sys
 from pathlib import Path
 import numpy as np
 
-# --- Local Imports ---
+# --- FIX: Add project root to sys.path ---
+# This ensures that we can find the 'experiments', 'scoring', and 'sae' modules
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+# --- End Fix ---
+
+# --- FIX: Use absolute import from project root ---
 from experiments.pipeline_utils import (
     load_perturb_candidates,
     find_hotspots
 )
+# --- End Fix ---
+
 from scoring.surrogate_models import SurrogateScorer
 from sae.utils.esm_utils import (
     load_esm2_model, 
@@ -38,7 +47,7 @@ from sae.utils.esm_utils import (
 )
 
 # --- Add interplm to path and import SAE loader ---
-repo_root = Path(__file__).resolve().parent.parent
+# repo_root is already defined above
 interplm_path = repo_root / "interplm"
 if str(interplm_path) not in sys.path:
     sys.path.insert(0, str(interplm_path))
@@ -53,8 +62,8 @@ except ImportError:
 # --- Configuration ---
 SAE_HF_NAME = "esm2-8m"
 SAE_HF_LAYER = 6
-ORACLE_MODEL_PATH = "models/ridge_onehot_rho0.953.joblib"
-CANDIDATE_CSV_PATH = "latent_property_correlation_mono.csv"
+ORACLE_MODEL_PATH = r"C:\Users\juani\Documents\Repos\proteng\model_scout_outs\models\ridge_onehot_10000.joblib"
+CANDIDATE_CSV_PATH = "outputs/latent_property_correlation_mono.csv"
 ESM_MODEL_NAME = "facebook/esm2_t6_8M_UR50D"
 
 BASELINE_SEQUENCE = "MQYKLILNGKTLKGETTTEAVDAATAEKVFKQYANDNGVDGEWTYDDATKTFTVTE" # GB1 Wildtype
@@ -62,6 +71,9 @@ STRENGTHS_TO_TEST = [-15.0, -10.0, -5.0, 5.0, 10.0, 15.0]
 CANDIDATES_PER_GROUP = 5 # Test top 5 positive, top 5 negative
 TOP_K_HOTSPOTS = 5       # Define "surgical" as top 5 positions
 OUTPUT_CSV_PATH = "runs/surgical_vs_global_results.csv"
+
+# --- FIX: Define the max_len the model was trained with ---
+SCORER_MODEL_MAX_LEN = 512
 
 # --- Main Execution ---
 
@@ -91,8 +103,9 @@ def main():
     
     esm_model, esm_tokenizer = load_esm2_model(ESM_MODEL_NAME, device=device)
     
-    scorer_model = SurrogateScorer(ORACLE_MODEL_PATH, 
-                                 {"encoding": "onehot", "max_len": len(BASELINE_SEQUENCE)})
+    # --- FIX: Use the correct SCORER_MODEL_MAX_LEN ---
+    scorer_config = {"encoding": "onehot", "max_len": SCORER_MODEL_MAX_LEN}
+    scorer_model = SurrogateScorer(ORACLE_MODEL_PATH, scorer_config)
     
     print("All models loaded.")
 
@@ -104,6 +117,7 @@ def main():
         BASELINE_SEQUENCE, sae_model, esm_model, esm_tokenizer, 
         surgical_perturbations=None, device=device
     )
+    print("Scorer model score:", scorer_model.score)
     baseline_score = scorer_model.score([baseline_seq])[0]
     print(f"Baseline (reconstructed) score: {baseline_score:.4f}")
 
@@ -154,7 +168,7 @@ def main():
                 surgical_perturbations=pert_global, # <-- Pass global map
                 device=device
             )
-            score_global = scorer_model.score([seq_Gseq_global])[0]
+            score_global = scorer_model.score([seq_global])[0]
             
             results.append({
                 "latent_index": latent_index, "strength": strength, "test_type": "global",

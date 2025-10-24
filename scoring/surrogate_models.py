@@ -6,15 +6,16 @@ import math
 # --- New Imports for Oracle Scorer ---
 import joblib
 import numpy as np
-try:
+
+# try:
     # This assumes 'ml_models' is an importable package,
     # just like 'scoring' and 'sae' seem to be.
-    from ml_models.encoding import encode_sequences
-except ImportError:
-    print("Warning: ml_models.encoding not found. SurrogateScorer may fail.")
-    # Define a placeholder if not found, so the file can be imported
-    def encode_sequences(*args, **kwargs):
-        raise ImportError("ml_models.encoding module not found.")
+from ml_models.encoding import encode_sequences
+# except ImportError:
+#     print("Warning: ml_models.encoding not found. SurrogateScorer may fail.")
+#     # Define a placeholder if not found, so the file can be imported
+#     def encode_sequences(*args, **kwargs):
+#         raise ImportError("ml_models.encoding module not found.")
 
 
 AA = set("ACDEFGHIKLMNPQRSTVWY")
@@ -124,6 +125,7 @@ class SurrogateScorer:
             print(f"Warning: Model file not found at {model_path}. Using None.")
             self.model = None # Allows for testing without a real model
         self.config = encoding_config
+        print("config:", self.config)
 
     def score(self, sequences: list[str]) -> np.ndarray:
         """
@@ -140,46 +142,7 @@ class SurrogateScorer:
             
         # Encode sequences using the same method as in training (from ml_models/encoding.py)
         X = encode_sequences(sequences, **self.config)
-        
         # Predict scores
         scores = self.model.predict(X)
         return scores
 
-    """
-    Loads and runs a pre-trained, data-driven sequence oracle
-    (e.g., the ridge on onehot features from results.csv).
-    
-    This is distinct from the heuristic `surrogate_score` function above.
-    """
-    
-    def __init__(self, model_path: str, encoding_config: dict):
-        """
-        Loads the pre-trained model.
-
-        Args:
-            model_path (str): Path to the .joblib model file.
-            encoding_config (dict): Params for the encoder, 
-                                    e.g., {"encoding": "onehot", "max_len": 512}
-        """
-        try:
-            self.model = joblib.load(model_path)
-        except FileNotFoundError:
-            print(f"Warning: SurrogateScorer model file not found at {model_path}. Using None.")
-            self.model = None # Allows for testing without a real model
-        self.config = encoding_config
-
-    def score(self, sequences: list[str]) -> np.ndarray:
-        """
-        Encodes and scores one or more sequences.
-
-        Args:
-            sequences (list[str]): A list of protein sequences.
-
-        Returns:
-            np.ndarray: A numpy array of predicted scores.
-        """
-        if self.model is None:
-            raise RuntimeError("SurrogateScorer model is not loaded.")
-            
-        # Encode sequences using the same method as in training (from ml_models/encoding.py)
-        X = encode_sequences(sequences, **self.config)
