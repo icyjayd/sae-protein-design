@@ -147,7 +147,10 @@ dependencies = [
     "zstandard (==0.25.0)"
 ]
 
-
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+# poetry-core handles normal builds; the local install_hooks shim will execute automatically
+requires = [
+    "poetry-core>=2.0.0,<3.0.0",
+    "install-hooks @ file:///${PROJECT_ROOT}/install_hooks"
+]
 build-backend = "poetry.core.masonry.api"
