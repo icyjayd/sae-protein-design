@@ -1,3 +1,3 @@
 pip install poetry
-poetry install
+poetry install --no-root
 poetry run python -m install_hooks
