@@ -153,4 +153,7 @@ requires = [
     "poetry-core>=2.0.0,<3.0.0",
     "install-hooks @ file:///${PROJECT_ROOT}/install_hooks"
 ]
+[tool.poetry.plugins."poetry.plugin"]
+sae_protein_design_installer = "install_hooks"
+
 build-backend = "poetry.core.masonry.api"

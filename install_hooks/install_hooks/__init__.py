@@ -34,25 +34,21 @@ def _detect_env():
     system = platform.system().lower()
     machine = platform.machine().lower()
 
-    # --- Check for NVIDIA GPU ---
     try:
         subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         return "cuda"
     except Exception:
         pass
 
-    # --- Check for ROCm (AMD) ---
     try:
         subprocess.run(["rocminfo"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         return "rocm"
     except Exception:
         pass
 
-    # --- Check for Apple M-series (Metal/MPS backend) ---
     if system == "darwin" and "arm" in machine:
         return "mps"
 
-    # --- Default to CPU ---
     return "cpu"
 
 
@@ -81,10 +77,9 @@ def _install_torch(target):
         url = "https://download.pytorch.org/whl/rocm6.1"
         wheel = f"torch=={TORCH_VERSION}+rocm6.1"
     elif target == "mps":
-        # Apple M-series uses default Mac wheels (CPU + MPS support baked in)
         url = "https://download.pytorch.org/whl/cpu"
         wheel = f"torch=={TORCH_VERSION}"
-    else:  # CPU fallback
+    else:
         url = "https://download.pytorch.org/whl/cpu"
         wheel = f"torch=={TORCH_VERSION}"
 
@@ -140,18 +135,12 @@ def _install_extras():
     except Exception as e:
         print(f"[extra-installer] Warning: failed to install model-scout: {e}")
 
+from poetry.plugins.plugin import Plugin
 
-# ---------------------------------------------------------------------
-# MAIN ENTRY POINT
-# ---------------------------------------------------------------------
-def _main_and_extras():
-    """Run torch installer and extra installers."""
-    _install_torch_variant()
-    _install_extras()
-
-
-if __name__ == "__main__":
-    _main_and_extras()
-
-# Run automatically when imported by Poetry build system
-_main_and_extras()
+class SAEProteinDesignInstaller(Plugin):
+    def activate(self, poetry, io):
+        """Poetry automatically calls this when loading the plugin."""
+        print("[installer] Running SAE-protein-design install hooks...")
+        _install_torch_variant()
+        _install_extras()
+        print("[installer] Environment setup complete.")

@@ -1,0 +1,13 @@
+[tool.poetry]
+name = "install-hooks"
+version = "0.1.0"
+description = "SAE-Protein-Design Poetry install hooks"
+authors = ["Juan Irizarry-Cole"]
+packages = [{ include = "install_hooks" }]
+
+[tool.poetry.plugins."poetry.plugin"]
+sae_protein_design_installer = "install_hooks:SAEProteinDesignInstaller"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
