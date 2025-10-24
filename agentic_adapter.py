@@ -6,10 +6,8 @@ import torch
 from transformers import AutoTokenizer, EsmForMaskedLM
 from pathlib import Path
 import sys, os
-repo_root = os.path.abspath(os.path.dirname(__file__))
-interplm_path = os.path.join(repo_root, "interplm")
-if interplm_path not in sys.path:
-    sys.path.insert(0, interplm_path)
+from mod_man_utils import add_module
+add_module("interplm")
 from sae.utils.esm_utils import encode_sequence
 
 from interplm.sae.inference import load_sae_from_hf

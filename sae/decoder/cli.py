@@ -18,6 +18,8 @@ def main():
     parser.add_argument("--experiment", type=str, default="default", help="Experiment name for caching and outputs.")
     parser.add_argument("--outdir", type=str, default="decoder_out", help="Output directory for checkpoints.")
     parser.add_argument("--causal", action="store_true", help="Use causal mask (autoregressive mode)")
+    parser.add_argument("--eval-every", type=int, default=0,
+                        help="Evaluate model every N epochs (0 disables periodic eval)")
 
     args = parser.parse_args()
 
@@ -51,6 +53,8 @@ def main():
         outdir=args.outdir,
         experiment=args.experiment,
         device=str(device),
+        eval_every=args.eval_every,
+        eval_dataset=test_ds,       # or whatever split you prefer
         causal=args.causal
     )
 
