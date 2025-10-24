@@ -1,40 +1,55 @@
-Proprietary Software License Agreement
+Commercial Evaluation License Agreement
 Copyright (c) 2025 Juan Irizarry-Cole. All rights reserved.
 
-This software and its source code (the “Software”) are proprietary and confidential.
-Unauthorized copying, modification, distribution, or use of the Software, in whole or in part, 
-is strictly prohibited without the prior written consent of the copyright holder.
+This Evaluation License (“Agreement”) governs your limited use of the proprietary software and
+accompanying materials (collectively, the “Software”) provided by Juan Irizarry-Cole (“Licensor”).
 
-1. Ownership
-   The Software and all associated intellectual property rights are owned by Juan Irizarry-Cole.
-   No ownership rights are transferred by this license.
+By installing, accessing, or using the Software, you (“Licensee”) agree to the following terms.
 
-2. Permitted Use
-   You may view, evaluate, and use the Software internally for research or demonstration purposes only.
-   Any commercial, academic, or public use requires a separate written agreement.
+1. Grant of License
+   Licensor grants Licensee a limited, non-exclusive, non-transferable, revocable license to install
+   and use the Software solely for internal evaluation, testing, and demonstration purposes.
+   No rights are granted for commercial deployment, production use, sublicensing, or distribution.
+
+2. Ownership
+   The Software and all intellectual property rights therein remain the exclusive property of the
+   Licensor. This Agreement does not transfer or assign any ownership rights.
 
 3. Restrictions
-   You may not:
-   a) Copy, modify, decompile, disassemble, or reverse engineer the Software;
-   b) Distribute, sublicense, sell, or lease the Software or any derivative works;
-   c) Remove or obscure any proprietary notices or markings.
+   Licensee shall not:
+   a) Copy, modify, adapt, translate, or create derivative works of the Software;
+   b) Reverse engineer, decompile, or disassemble the Software;
+   c) Use the Software for any commercial, academic, or revenue-generating activity;
+   d) Disclose, distribute, or make the Software available to any third party without written consent.
 
 4. Confidentiality
-   The Software contains trade secrets and proprietary information. You agree to maintain strict
-   confidentiality and to prevent unauthorized disclosure to any third party.
+   The Software and all related information are the confidential and proprietary information of the
+   Licensor. Licensee shall maintain the Software in strict confidence and use it only as permitted
+   under this Agreement.
 
-5. Disclaimer of Warranty
-   The Software is provided “as is” without warranty of any kind, express or implied, including but not 
-   limited to warranties of merchantability, fitness for a particular purpose, and noninfringement.
+5. Term and Termination
+   This Agreement is effective upon delivery of the Software and shall remain in effect for ninety
+   (90) days, unless extended in writing by Licensor.
+   Licensor may terminate this Agreement immediately upon notice if Licensee breaches any term.
+   Upon termination, Licensee must cease all use of the Software and destroy all copies.
 
-6. Limitation of Liability
-   In no event shall the copyright holder be liable for any direct, indirect, incidental, special, or
-   consequential damages arising out of or in connection with the use or performance of the Software.
+6. Disclaimer of Warranty
+   The Software is provided “AS IS,” without warranty of any kind, express or implied, including but
+   not limited to implied warranties of merchantability, fitness for a particular purpose, or
+   non-infringement.
 
-7. Termination
-   This license is effective until terminated. The copyright holder may terminate it at any time if 
-   you fail to comply with its terms. Upon termination, you must destroy all copies of the Software.
+7. Limitation of Liability
+   In no event shall Licensor be liable for any indirect, incidental, special, or consequential damages,
+   or for loss of profits, data, or use, arising out of or relating to this Agreement or the Software.
 
-For commercial licensing inquiries, please contact:
+8. Governing Law
+   This Agreement shall be governed by and construed in accordance with the laws of the State of
+   [Your State], without regard to its conflict-of-law principles.
+
+9. Entire Agreement
+   This Agreement constitutes the entire understanding between the parties with respect to its
+   subject matter and supersedes all prior or contemporaneous agreements, oral or written.
+
+For commercial licensing or extended evaluation rights, contact:
    Juan Irizarry-Cole
    Email: juan.irizarry.cole@gmail.com
