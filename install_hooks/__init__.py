@@ -1,25 +1,33 @@
 """
 Auto-installs the correct PyTorch build (CUDA, MPS, ROCm, or CPU)
-during Poetry install. Reinstalls if the wrong variant is detected.
+during Poetry install. Also installs extra dependencies like interPLM
+and the local model-scout submodule.
 """
 
 import sys
 import subprocess
 import platform
 import importlib
+import os
 
 TORCH_VERSION = "2.4.0"
 
+
 def _run(cmd):
     """Run shell command safely."""
-    print(f"[torch-installer] Running: {' '.join(cmd)}")
+    print(f"[installer] Running: {' '.join(cmd)}")
     subprocess.check_call(cmd)
 
+
+# ---------------------------------------------------------------------
+# TORCH INSTALLER
+# ---------------------------------------------------------------------
 def _uninstall_torch():
     try:
         _run([sys.executable, "-m", "pip", "uninstall", "-y", "torch"])
     except Exception as e:
         print(f"[torch-installer] Warning: failed to uninstall existing torch: {e}")
+
 
 def _detect_env():
     """Detects best-fit accelerator environment."""
@@ -47,6 +55,7 @@ def _detect_env():
     # --- Default to CPU ---
     return "cpu"
 
+
 def _torch_variant_installed():
     """Detect what torch variant is currently installed, if any."""
     try:
@@ -61,6 +70,7 @@ def _torch_variant_installed():
             return "cpu"
     except Exception:
         return None
+
 
 def _install_torch(target):
     """Install the appropriate torch build."""
@@ -81,7 +91,9 @@ def _install_torch(target):
     print(f"[torch-installer] Installing {wheel} from {url}")
     _run([sys.executable, "-m", "pip", "install", wheel, "--index-url", url])
 
-def _main():
+
+def _install_torch_variant():
+    """Main logic for installing correct torch variant."""
     target = _detect_env()
     installed = _torch_variant_installed()
 
@@ -97,8 +109,49 @@ def _main():
     else:
         print(f"[torch-installer] Correct torch variant ({target}) already installed — skipping.")
 
+
+# ---------------------------------------------------------------------
+# EXTRAS INSTALLER (interPLM + model-scout)
+# ---------------------------------------------------------------------
+def _install_extras():
+    """Install additional dependencies and local submodules (interPLM, model-scout)."""
+    repo_url = "https://github.com/ElanaPearl/interPLM.git"
+    repo_dir = os.path.join(os.getcwd(), "interPLM")
+
+    # --- Install interPLM ---
+    try:
+        if not os.path.exists(repo_dir):
+            print(f"[extra-installer] Cloning interPLM from {repo_url}...")
+            _run(["git", "clone", repo_url, repo_dir])
+        else:
+            print("[extra-installer] interPLM repo already exists — pulling latest changes...")
+            _run(["git", "-C", repo_dir, "pull"])
+
+        print("[extra-installer] Installing interPLM in editable mode...")
+        _run([sys.executable, "-m", "pip", "install", "-e", repo_dir])
+
+    except Exception as e:
+        print(f"[extra-installer] Warning: failed to install interPLM: {e}")
+
+    # --- Install model-scout submodule ---
+    try:
+        print("[extra-installer] Installing local submodule model-scout...")
+        _run([sys.executable, "-m", "pip", "install", "-e", "model-scout"])
+    except Exception as e:
+        print(f"[extra-installer] Warning: failed to install model-scout: {e}")
+
+
+# ---------------------------------------------------------------------
+# MAIN ENTRY POINT
+# ---------------------------------------------------------------------
+def _main_and_extras():
+    """Run torch installer and extra installers."""
+    _install_torch_variant()
+    _install_extras()
+
+
 if __name__ == "__main__":
-    _main()
+    _main_and_extras()
 
 # Run automatically when imported by Poetry build system
-_main()
+_main_and_extras()
