@@ -16,6 +16,7 @@ def train_decoder(
     outdir: str = "decoder_out",
     experiment: str = "default",
     device: str = "cpu",
+    **kwargs
 ):
     """
     Trains the latent→sequence decoder (GRU or MLP) using the provided dataset.
@@ -37,7 +38,8 @@ def train_decoder(
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Build model and optimizer
-    model = build_decoder(model_type, latent_dim).to(device)
+    causal = kwargs.pop("causal", True)
+    model = build_decoder(model_type, latent_dim, causal=causal).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
 

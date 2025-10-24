@@ -17,6 +17,8 @@ def main():
     parser.add_argument("--model", choices=["gru", "mlp"], default="gru", help="Decoder architecture type.")
     parser.add_argument("--experiment", type=str, default="default", help="Experiment name for caching and outputs.")
     parser.add_argument("--outdir", type=str, default="decoder_out", help="Output directory for checkpoints.")
+    parser.add_argument("--causal", action="store_true", help="Use causal mask (autoregressive mode)")
+
     args = parser.parse_args()
 
     # --- Load sequences and cached splits ---
@@ -48,7 +50,8 @@ def main():
         lr=args.lr,
         outdir=args.outdir,
         experiment=args.experiment,
-        device=str(device)
+        device=str(device),
+        causal=args.causal
     )
 
     # --- Evaluate on test split ---
