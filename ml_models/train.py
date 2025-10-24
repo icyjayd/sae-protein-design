@@ -1,117 +1,125 @@
-import os
-import json
-from datetime import datetime
-import numpy as np
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split
+# sae/decoder/train.py
+import torch
+import torch.nn as nn
+from pathlib import Path
+from .models import build_decoder
+from .data import make_dataloader
 
-from .data_utils import load_data
-from .models import build_model
-from .metrics import compute_metrics
-from .encoding import encode_sequences
 
-def _auto_outdir(model_name, encoding, n_samples, prefix=None, base="runs/ml_model"):
-    n_str = str(n_samples) if n_samples else "all"
-    parts = []
-    if prefix:
-        parts.append(prefix)
-    parts += [model_name, encoding, n_str]
-    run_name = "_".join(parts)
-    return os.path.join(base, run_name)
+def _get_latest_checkpoint(experiment_dir: Path, model_type: str):
+    """Returns the latest checkpoint for a given model type, or None."""
+    ckpts = sorted(experiment_dir.glob(f"{model_type}_epoch*.pt"))
+    if not ckpts:
+        return None
+    latest = ckpts[-1]
+    print(f"[INFO] Found existing checkpoint: {latest.name}")
+    return latest
 
-def train_model(
-    seq_file,
-    labels_file=None,
-    task=None,
-    model_name="rf",
-    encoding="aac",
-    seed=42,
-    outdir=None,
-    prefix=None,
-    n_samples=None,
-    test_size=0.2,
-    stratify="auto",
-    k=3,
-    max_len=512,
-    split=None,
-    split_file=None,
-    save_split=True,
+
+def train_decoder(
+    dataset,
+    latent_dim: int,
+    model_type: str = "gru",
+    epochs: int = 20,
+    batch_size: int = 32,
+    lr: float = 1e-3,
+    outdir: str = "decoder_out",
+    experiment: str = "default",
+    device: str = "cpu",
+    resume_from: str = None,
 ):
-    np.random.seed(seed)
+    """
+    Trains the latent→sequence decoder (GRU or MLP) using the provided dataset.
+    Supports resuming from previous checkpoints automatically or manually.
+    """
+    outdir = Path(outdir) / experiment
+    outdir.mkdir(parents=True, exist_ok=True)
 
-    seq_file = str(seq_file)
-    labels_file = str(labels_file) if labels_file is not None else None
-    outdir = str(outdir) if outdir is not None else None
-    split_path = split_file or split
-    split_path = str(split_path) if split_path is not None else None
+    # ----------------------------------------------------------
+    # Build model
+    # ----------------------------------------------------------
+    model = build_decoder(model_type, latent_dim).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.CrossEntropyLoss(ignore_index=-100)
 
-    df = load_data(seq_file, labels_file)
-    if n_samples:
-        df = df.sample(n=min(n_samples, len(df)), random_state=seed)
-    n_samples = n_samples or "all"
-
-    if task is None:
-        task = "regression" if np.issubdtype(df["label"].dtype, np.number) else "classification"
-
-    X = encode_sequences(df["sequence"], encoding, k=k, max_len=max_len)
-    y = df["label"].values
-
-    scaler = StandardScaler(with_mean=False)
-    X = scaler.fit_transform(X)
-
-    label_encoder = None
-    if task == "classification" and not np.issubdtype(y.dtype, np.number):
-        label_encoder = LabelEncoder()
-        y = label_encoder.fit_transform(y)
-
-    idx = np.arange(len(y))
-    if split_path and os.path.exists(split_path):
-        split_data = json.load(open(split_path))
-        train_idx = np.asarray(split_data["train_idx"], dtype=int)
-        test_idx = np.asarray(split_data["test_idx"], dtype=int)
+    # ----------------------------------------------------------
+    # Resume logic
+    # ----------------------------------------------------------
+    start_epoch = 0
+    if resume_from:
+        ckpt_path = Path(resume_from)
+        print(f"[INFO] Resuming training from: {ckpt_path}")
+        checkpoint = torch.load(ckpt_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state"])
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+        start_epoch = checkpoint.get("epoch", 0)
     else:
-        stratify_y = y if (task == "classification" and stratify == "auto") else None
-        train_idx, test_idx = train_test_split(
-            idx, test_size=test_size, random_state=seed, stratify=stratify_y
+        latest = _get_latest_checkpoint(outdir, model_type)
+        if latest:
+            print(f"[INFO] Automatically resuming from {latest.name}")
+            checkpoint = torch.load(latest, map_location=device)
+            if isinstance(checkpoint, dict) and "model_state" in checkpoint:
+                model.load_state_dict(checkpoint["model_state"])
+                optimizer.load_state_dict(checkpoint["optimizer_state"])
+                start_epoch = checkpoint.get("epoch", 0)
+            else:
+                print("[WARN] Old-format checkpoint detected (no optimizer). Starting fresh.")
+
+    # ----------------------------------------------------------
+    # Training
+    # ----------------------------------------------------------
+    loader = make_dataloader(dataset, batch_size=batch_size, shuffle=True)
+    print(f"[INFO] Starting training: {model_type.upper()} | {len(dataset)} samples | {epochs} epochs total")
+    print(f"[INFO] Checkpoints directory: {outdir}")
+    print(f"[INFO] Resuming at epoch {start_epoch + 1}")
+
+    for epoch in range(start_epoch + 1, epochs + 1):
+        model.train()
+        total_loss = 0.0
+        for latents, tokens in loader:
+            latents, tokens = latents.to(device), tokens.to(device)
+            optimizer.zero_grad()
+            logits = model(latents, target_seq=tokens)
+            loss = criterion(logits.transpose(1, 2), tokens)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+
+        avg_loss = total_loss / len(loader)
+        print(f"[{experiment}] Epoch {epoch:02d}/{epochs} | Loss = {avg_loss:.4f}")
+
+        # Save checkpoint (includes optimizer)
+        ckpt_path = outdir / f"{model_type}_epoch{epoch}.pt"
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state": model.state_dict(),
+                "optimizer_state": optimizer.state_dict(),
+            },
+            ckpt_path,
         )
-        split_data = {"train_idx": train_idx.tolist(), "test_idx": test_idx.tolist()} if save_split else None
 
-    X_train, X_test = X[train_idx], X[test_idx]
-    y_train, y_test = y[train_idx], y[test_idx]
+    print(f"[INFO] Training complete. Checkpoints saved under {outdir}")
+    return model
 
-    model = build_model(task, model_name)
-    model.fit(X_train, y_train)
 
-    y_pred = model.predict(X_test)
-    metrics = compute_metrics(task, y_test, y_pred)
+def evaluate_decoder(model, dataset, batch_size=32, device="cpu"):
+    """
+    Evaluates a trained decoder on a dataset.
+    Returns average cross-entropy loss.
+    """
+    loader = make_dataloader(dataset, batch_size=batch_size, shuffle=False)
+    criterion = nn.CrossEntropyLoss(ignore_index=-100)
 
-    if outdir is None:
-        outdir = _auto_outdir(model_name, encoding, None if n_samples == "all" else n_samples, prefix)
-    os.makedirs(outdir, exist_ok=True)
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for latents, tokens in loader:
+            latents, tokens = latents.to(device), tokens.to(device)
+            logits = model(latents, target_seq=tokens)
+            loss = criterion(logits.transpose(1, 2), tokens)
+            total_loss += loss.item()
 
-    import joblib
-    joblib.dump(model, os.path.join(outdir, "model.pkl"))
-    joblib.dump(scaler, os.path.join(outdir, "scaler.pkl"))
-    if label_encoder is not None:
-        joblib.dump(label_encoder, os.path.join(outdir, "labels.pkl"))
-
-    if split_data and save_split:
-        split_out = split_path or os.path.join(outdir, "split.json")
-        with open(split_out, "w") as f:
-            json.dump(split_data, f, indent=2)
-
-    manifest = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "task": task,
-        "model": model_name,
-        "encoding": encoding,
-        "n_samples": n_samples,
-        "seed": seed,
-        "metrics": metrics,
-        "outdir": str(outdir),
-    }
-    with open(os.path.join(outdir, "run.json"), "w") as f:
-        json.dump(manifest, f, indent=2)
-
-    print(json.dumps(metrics, indent=2))
-    return metrics
+    avg_loss = total_loss / len(loader)
+    print(f"[EVAL] Test loss = {avg_loss:.4f}")
+    return avg_loss

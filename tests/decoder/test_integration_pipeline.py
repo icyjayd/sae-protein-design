@@ -2,8 +2,8 @@
 import torch
 import torch.nn as nn
 from pathlib import Path
-from .models import build_decoder
-from .data import make_dataloader
+from sae.decoder.models import build_decoder
+from sae.decoder.data import make_dataloader
 
 
 def train_decoder(

@@ -7,6 +7,7 @@ from pathlib import Path
 from .models import build_decoder
 from .data import IDX_TO_AA
 
+
 def decode_logits_to_sequence(logits, temperature=1.0):
     probs = F.softmax(logits / temperature, dim=-1)
     indices = torch.multinomial(probs, 1).squeeze(-1)
@@ -16,8 +17,23 @@ def decode_logits_to_sequence(logits, temperature=1.0):
 
 def sample_sequences(model_path, latent_dim, model_type="gru",
                      n_samples=5, temperature=1.0, device="cpu", max_len=256, latents_path=None):
-    model = build_decoder(model_type, latent_dim)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    """
+    Load a trained decoder and generate new amino-acid sequences.
+    Now infers MLP max_len automatically from checkpoint if needed.
+    """
+    checkpoint = torch.load(model_path, map_location=device)
+
+    # FIX: infer max_len from checkpoint if possible
+    inferred_max_len = max_len
+    if model_type == "mlp":
+        for k, v in checkpoint.items():
+            if "model.4.weight" in k and v.ndim == 2:
+                inferred_max_len = v.shape[0] // 20  # divide by vocab size
+                print(f"[INFO] Inferred MLP max_len = {inferred_max_len}")
+                break
+
+    model = build_decoder(model_type, latent_dim, max_len=inferred_max_len)
+    model.load_state_dict(checkpoint)
     model.to(device).eval()
 
     sequences = []
@@ -31,24 +47,25 @@ def sample_sequences(model_path, latent_dim, model_type="gru",
             latents = torch.randn(n_samples, latent_dim, device=device)
 
         for i, z in enumerate(latents):
-            logits = model(z.unsqueeze(0), target_seq=None, teacher_forcing=0.0, max_len=max_len)
+            logits = model(z.unsqueeze(0), target_seq=None, teacher_forcing=0.0, max_len=inferred_max_len)
             seq = decode_logits_to_sequence(logits[0], temperature)
             print(f"[{i+1}] {seq}")
             sequences.append(seq)
+
     return sequences
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate sequences from a trained latent decoder.")
     parser.add_argument("--model", required=True, help="Path to trained decoder checkpoint (.pt)")
-    parser.add_argument("--latent-dim", type=int, required=True, help="Latent dimensionality")
-    parser.add_argument("--model-type", choices=["gru", "mlp"], default="gru", help="Decoder architecture type")
-    parser.add_argument("--n", type=int, default=5, help="Number of sequences to generate")
-    parser.add_argument("--temperature", type=float, default=1.0, help="Sampling temperature")
-    parser.add_argument("--max-len", type=int, default=256, help="Max sequence length for generation")
-    parser.add_argument("--latents", type=str, default=None, help="Optional .npy file of latents to sample from")
-    parser.add_argument("--experiment", type=str, default="default", help="Experiment name (for cache-based output)")
-    parser.add_argument("--out", type=str, default=None, help="Optional path to save generated sequences")
+    parser.add_argument("--latent-dim", type=int, required=True)
+    parser.add_argument("--model-type", choices=["gru", "mlp"], default="gru")
+    parser.add_argument("--n", type=int, default=5)
+    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--max-len", type=int, default=256)
+    parser.add_argument("--latents", type=str, default=None)
+    parser.add_argument("--experiment", type=str, default="default")
+    parser.add_argument("--out", type=str, default=None)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -62,7 +79,7 @@ def main():
         temperature=args.temperature,
         device=str(device),
         max_len=args.max_len,
-        latents_path=args.latents
+        latents_path=args.latents,
     )
 
     if args.out:

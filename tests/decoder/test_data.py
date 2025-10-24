@@ -1,10 +1,10 @@
 """
 Tests data loading, caching, and dataset creation for the decoder pipeline.
 """
-import os
 import torch
 import pandas as pd
-from sae.decoder.data import load_or_create_splits, LatentSequenceDataset, make_dataloader
+from sae.decoder.data import load_or_create_splits, LatentSequenceDataset, make_dataloader, get_cache_dir
+
 
 class DummySAE:
     def encode(self, x): return x.mean(dim=0, keepdim=True)
@@ -13,13 +13,21 @@ class DummyESM:
 class DummyTokenizer:
     def __call__(self, seq, **_): return {"input_ids": torch.arange(5).unsqueeze(0)}
 
+
 def test_load_or_create_splits_csv(tmp_path):
     csv_path = tmp_path / "seqs.csv"
     df = pd.DataFrame({"sequence": ["AAA", "BBB", "CCC", "DDD"], "split": ["train", "test", "train", "test"]})
     df.to_csv(csv_path, index=False)
+
+    # FIX: clear cache for clean test
+    cache_dir = get_cache_dir("unit_exp")
+    for f in cache_dir.glob("*"):
+        f.unlink()
+
     train, test, cached = load_or_create_splits(csv_path, "unit_exp")
     assert len(train) == 2 and len(test) == 2
     assert not cached
+
 
 def test_dataset_creation_and_dataloader(tmp_path):
     seqs = ["ACDE", "FGHI"]
