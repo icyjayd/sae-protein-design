@@ -1,71 +1,130 @@
-"""
-Tests for the SurrogateScorer class in scoring/surrogate_models.py
-"""
+# scoring/surrogate_models.py
+from __future__ import annotations
+from typing import Dict
+import math
 
-import pytest
+# --- New Imports for Oracle Scorer ---\
+import joblib
 import numpy as np
-from unittest.mock import patch
-from scoring.surrogate_models import SurrogateScorer
 
-def test_scorer_initialization(mock_surrogate_model):
-    """Tests that the scorer class loads the mock model file."""
-    model_path = mock_surrogate_model
-    
-    scorer = SurrogateScorer(model_path, encoding_config={"encoding": "onehot"})
-    assert scorer.model is not None
-    # Check that the loaded model has the .predict method
-    assert hasattr(scorer.model, "predict")
+# --- FIX: Removed the try/except block ---
+# This forces a clean import. If this fails, we have a PYTHONPATH
+# issue, but pytest should handle this by adding the root dir.
+from ml_models.encoding import encode_sequences
 
-def test_scorer_handles_missing_model_file():
-    """Tests that the scorer initializes with model=None if file is missing."""
-    scorer = SurrogateScorer("non_existent_model.joblib", encoding_config={})
-    assert scorer.model is None
 
-def test_scorer_predicts_score(mock_surrogate_model, mocker):
+AA = set("ACDEFGHIKLMNPQRSTVWY")
+HYDROPHOBIC = set("AILMFWYV")
+CHARGED_POS = set("KRH")
+CHARGED_NEG = set("DE")
+AROMATIC = set("FWY")
+
+def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
+    return max(lo, min(hi, x))
+
+def _fraction(seq: str, bag: set[str]) -> float:
+    n = len(seq)
+    if n == 0:
+        return 0.0
+    return sum(c in bag for c in seq) / n
+
+def _max_run(seq: str) -> int:
+    if not seq:
+        return 0
+    max_run = 0
+    current_run = 0
+    for char in seq:
+        if char in AROMATIC:
+            current_run += 1
+        else:
+            max_run = max(max_run, current_run)
+            current_run = 0
+    max_run = max(max_run, current_run)
+    return max_run
+
+def heuristic_surrogate_score(seq: str) -> float:
     """
-    Tests that the .score() method calls the encoding function
-    and the model's .predict() method.
+    A simple, interpretable surrogate model for a hypothetical
+    protein property that balances stability (hydrophobicity)
+    and solubility (charge), while penalizing aggregation (aromatic runs).
     """
-    model_path = mock_surrogate_model
-    config = {"encoding": "onehot", "max_len": 100}
-    scorer = SurrogateScorer(model_path, config)
-    
-    # Mock the encode_sequences function from the ml_models.encoding module
-    mock_encoder = mocker.patch(
-        "scoring.surrogate_models.encode_sequences", 
-        return_value=np.array([[0, 1, 0]]))
-    
-    # --- FIX: Spy on the *loaded model instance* ---
-    # We spy on the 'predict' method of the model object *inside* the scorer
-    predict_spy = mocker.spy(scorer.model, "predict")
-    
-    test_sequences = ["TESTSEQ"]
-    scores = scorer.score(test_sequences)
-    
-    # 1. Assert encode_sequences was called correctly
-    mock_encoder.assert_called_once_with(test_sequences, **config)
-    
-    # 2. Assert model.predict was called with the output of the encoder
-    predict_spy.assert_called_once()
-    # Check the argument passed to the spied 'predict' method
-    np.testing.assert_array_equal(
-        predict_spy.call_args[0][0], 
-        np.array([[0, 1, 0]])
-    )
-    
-    # 3. Assert the final score is what the mock model returned
-    assert scores == np.array([1.23])
+    if not seq or not all(c in AA for c in seq):
+        return 0.0  # Invalid sequence
 
-def test_scorer_raises_error_if_no_model(mocker):
-    """Tests that .score() raises a RuntimeError if the model wasn't loaded."""
-    scorer = SurrogateScorer("non_existent_model.joblib", encoding_config={})
-    assert scorer.model is None
+    # 1. Stability (Hydrophobicity)
+    # Target: 30-40% hydrophobic residues
+    f_hydro = _fraction(seq, HYDROPHOBIC)
+    # Score is 1.0 at 35%, 0.0 at 15% and 55%
+    stability_score = _clamp(1.0 - abs(f_hydro - 0.35) / 0.2)
+
+    # 2. Solubility (Net Charge)
+    # Target: More charged residues, but not extremely skewed
+    f_pos = _fraction(seq, CHARGED_POS)
+    f_neg = _fraction(seq, CHARGED_NEG)
+    f_charged = f_pos + f_neg
+    net_charge = abs(f_pos - f_neg)
+    # Score is 1.0 at 25% charged, 0.0 at 0%
+    charge_amount_score = _clamp(f_charged / 0.25)
+    # Score is 1.0 at 0 net charge, 0.0 at 20% net charge
+    charge_balance_score = _clamp(1.0 - net_charge / 0.2)
+    solubility_score = (charge_amount_score + charge_balance_score) / 2.0
+
+    # 3. Aggregation Penalty (Aromatic Runs)
+    # Penalize runs of aromatic residues (e.g., FFF, WYW)
+    max_aromatic_run = _max_run(seq)
+    # No penalty for <= 2, max penalty at 5
+    aggregation_penalty = _clamp((max_aromatic_run - 2) / 3.0)
     
-    # Mock the encoder just to get past that step
-    mocker.patch(
-        "scoring.surrogate_models.encode_sequences", 
-        return_value=np.array([[0, 1, 0]]))
+    # Final Score
+    # Stability and solubility are key. Aggregation is a penalty.
+    base_score = 0.6 * stability_score + 0.4 * solubility_score
+    final_score = base_score * (1.0 - 0.5 * aggregation_penalty) # 50% max penalty
     
-    with pytest.raises(RuntimeError, match="model is not loaded"):
-        scorer.score(["TESTSEQ"])
+    # Scale to a 0-10 range for more dynamic output
+    return round(final_score * 10.0, 4)
+
+
+class SurrogateScorer:
+    """
+    Loads and runs a pre-trained, data-driven sequence oracle
+    (e.g., the ridge on onehot features from results.csv).
+    
+    This is distinct from the heuristic `heuristic_surrogate_score` function above.
+    """
+    
+    def __init__(self, model_path: str, encoding_config: dict):
+        """
+        Loads the pre-trained model.
+
+        Args:
+            model_path (str): Path to the .joblib model file.
+            encoding_config (dict): Params for the encoder, 
+                                    e.g., {"encoding": "onehot", "max_len": 512}
+        """
+        try:
+            self.model = joblib.load(model_path)
+        except FileNotFoundError:
+            print(f"Warning: SurrogateScorer model file not found at {model_path}. Using None.")
+            self.model = None # Allows for testing without a real model
+        self.config = encoding_config
+
+    def score(self, sequences: list[str]) -> np.ndarray:
+        """
+        Encodes and scores one or more sequences.
+
+        Args:
+            sequences (list[str]): A list of protein sequences.
+
+        Returns:
+            np.ndarray: A numpy array of predicted scores.
+        """
+        if self.model is None:
+            raise RuntimeError("SurrogateScorer model is not loaded.")
+            
+        # Call the encoder
+        X = encode_sequences(sequences, **self.config)
+        
+        # Predict scores
+        scores = self.model.predict(X)
+        return scores
 
