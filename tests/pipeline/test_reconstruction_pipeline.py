@@ -2,7 +2,8 @@
 Integration test for the full per-token reconstruction pipeline.
 
 This test verifies that the `perturb_and_decode` function
-can reconstruct sequences with high fidelity when no perturbation is applied.
+can reconstruct sequences with high fidelity when no perturbation is applied,
+and that it *fails* to reconstruct when a strong perturbation is applied.
 """
 
 import pytest
@@ -21,8 +22,8 @@ from sae.utils.grade_reconstructions import mean_grade, grade_pair
 RECONSTRUCTION_SIMILARITY_THRESHOLD = 0.95 
 NUM_SEQUENCES_TO_TEST = 20 
 STRONG_PERTURBATION_DELTA = 50.0
-# We expect a strong perturbation to make the sequence < 50% similar
 PERTURBATION_SIMILARITY_THRESHOLD = 0.5 
+SAE_DIMENSIONS = 10240
 
 def test_reconstruction_similarity(
     esm_model_and_tokenizer,  # Fixture from tests/pipeline/conftest.py
@@ -46,10 +47,10 @@ def test_reconstruction_similarity(
 
     for seq in tqdm(sequences_to_test, desc="Grading Reconstructions"):
         
-        # --- Call with no perturbations ---
+        # --- FIX: Call with surgical_perturbations=None ---
         recon_seq = perturb_and_decode(
             sequence=seq,
-            perturbations=None, # <-- No perturbations
+            surgical_perturbations=None, # <-- No perturbations
             esm_model=esm_model,
             tokenizer=tokenizer,
             sae_model=sae_model,
@@ -75,7 +76,6 @@ def test_reconstruction_similarity(
         f"Mean similarity {mean_similarity:.4f} is below the {RECONSTRUCTION_SIMILARITY_THRESHOLD} threshold."
 
 
-# --- UPDATED TEST ---
 def test_strong_perturbation_changes_sequence(
     esm_model_and_tokenizer,  # Fixture from tests/pipeline/conftest.py
     sae_model,                # Fixture from tests/pipeline/conftest.py
@@ -83,8 +83,8 @@ def test_strong_perturbation_changes_sequence(
 ):
     """
     Tests that applying a very strong perturbation to *all* latent
-    dimensions results in a sequence that is *significantly different*
-    from the original.
+    dimensions at *all* positions results in a sequence that is
+    *significantly different* from the original.
     """
     esm_model, tokenizer = esm_model_and_tokenizer
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -92,17 +92,30 @@ def test_strong_perturbation_changes_sequence(
     seq = test_sequences[0]
     print(f"\nTesting strong perturbation on sequence: {seq[:30]}...")
 
-    # --- Create a perturbation dict for *all* latents ---
-    # num_latents = sae_model.d_sae
-    num_latents = 10240
-    perturbations = {i: STRONG_PERTURBATION_DELTA for i in range(num_latents)}
+    # --- FIX: Build the new surgical_perturbations map ---
     
-    print(f"Applying delta={STRONG_PERTURBATION_DELTA} to all {num_latents} latents...")
+    # 1. Define the perturbation for a *single* token:
+    #    (perturb all 10240 latents by the delta)
+    all_latents_pert = {
+        i: STRONG_PERTURBATION_DELTA for i in range(SAE_DIMENSIONS)
+    }
+    
+    # 2. Define the *positional* map:
+    #    Apply this strong perturbation to *every* token (position)
+    #    The loop in perturb_and_decode goes from 1 to L-2,
+    #    so we create keys for 1, 2, ..., len(seq)
+    seq_len = len(seq)
+    surgical_map = {
+        i + 1: all_latents_pert for i in range(seq_len)
+    }
+    
+    print(f"Applying delta={STRONG_PERTURBATION_DELTA} to all {SAE_DIMENSIONS} latents "
+          f"at all {seq_len} positions...")
 
-    # --- Run the function with a STRONG perturbation ---
+    # --- Run the function with the STRONG surgical map ---
     recon_seq_perturbed = perturb_and_decode(
         sequence=seq,
-        perturbations=perturbations, # <-- Pass the full dict
+        surgical_perturbations=surgical_map, # <-- Pass the full surgical map
         esm_model=esm_model,
         tokenizer=tokenizer,
         sae_model=sae_model,

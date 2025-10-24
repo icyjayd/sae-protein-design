@@ -6,11 +6,12 @@ This file provides the core functions for:
 2. Encoding a sequence into per-token representations.
 3. Running the full "Encode -> Perturb -> Decode" pipeline
    on a per-token basis.
+4. Getting the per-token activation matrix.
 """
 
 import torch
 from transformers import EsmTokenizer, EsmForMaskedLM
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple # Added Tuple
 
 # --- 1. Model Loading ---
 
@@ -33,7 +34,8 @@ def encode_sequence(sequence: str, model: EsmForMaskedLM, tokenizer: EsmTokenize
     
     Returns:
         token_reps: (L, D) tensor of token representations (no batch dim).
-        pooled: (D,) tensor of mean-pooled representation.
+                    Includes <cls> and <eos> tokens.
+        pooled: (D,) tensor of mean-pooled representation (real tokens only).
     """
     inputs = tokenizer(sequence, return_tensors="pt", add_special_tokens=True)
     inputs = {k: v.to(device) for k, v in inputs.items()}
@@ -48,44 +50,37 @@ def encode_sequence(sequence: str, model: EsmForMaskedLM, tokenizer: EsmTokenize
 
 # --- 3. Perturbation and Decoding ---
 
-# TODO: Implement position-wise (surgical) perturbation.
-# The current `perturbations` dict applies a global delta to the
-# specified latent dim across *all* tokens in the sequence.
-# A more advanced version would allow specifying *which*
-# tokens (i.e., sequence positions) to perturb, e.g.,
-# by also passing a `target_positions: List[int]` argument.
-# This would allow for more targeted, intelligent design based on
-# per-token latent activations.
-
 def perturb_and_decode(
     sequence: str,
     sae_model: torch.nn.Module,
     esm_model: EsmForMaskedLM,
     tokenizer: EsmTokenizer,
-    perturbations: Optional[Dict[int, float]] = None,
+    # --- MODIFIED ARGUMENT ---
+    # This new structure allows specifying *which* latents to perturb
+    # at *which* specific positions.
+    # Example: { 10: {4092: 10.0}, 22: {4092: 12.0, 800: -5.0} }
+    surgical_perturbations: Optional[Dict[int, Dict[int, float]]] = None,
     device: str = "cpu"
 ) -> str:
     """
     Performs a full per-token encode -> perturb -> decode pipeline.
     
-    This function is a stateless version of the logic found in
-    the RealSAE.perturb_and_decode method.
-
     Args:
         sequence: The input protein sequence string.
         sae_model: The trained SAE model.
         esm_model: The ESM2 model (must have LM head).
         tokenizer: The ESM2 tokenizer.
-        perturbations: A dictionary mapping latent_index -> delta_strength.
-                       e.g., {4092: 10.0, 1024: -5.0}
-                       If None or empty, performs reconstruction.
+        surgical_perturbations: (NEW) A dictionary mapping a 
+            token_position_index -> { latent_index -> delta_strength }.
+            Positions are 1-based (relative to the start of the 
+            full token tensor, so 1 is the first real token).
         device: The device to run on ('cuda' or 'cpu').
 
     Returns:
         The decoded protein sequence string.
     """
-    if perturbations is None:
-        perturbations = {}
+    if surgical_perturbations is None:
+        surgical_perturbations = {}
 
     # 1. ENCODE SEQUENCE (Per-Token)
     # token_reps is (L, D), where L = len(sequence) + 2 (for <cls> and <eos>)
@@ -94,43 +89,77 @@ def perturb_and_decode(
 
     reconstructed_token_embeddings = []
     
-    # We iterate over the *real* tokens, skipping <cls> and <eos>
+    # We iterate over the *real* tokens, skipping <cls> (idx 0) and <eos> (idx L-1)
     for i in range(1, L - 1):
         token_vec = token_reps[i].unsqueeze(0)  # (1, D)
         
         # 2. ENCODE TOKEN (SAE)
-        # Pass token embedding through SAE
         latent = sae_model.encode(token_vec) # (1, d_sae)
-        # 3. PERTURB LATENT
-        if perturbations:
-            for dim, delta in perturbations.items():
+
+        # 3. PERTURB LATENT (SURGICAL)
+        # --- MODIFIED LOGIC ---
+        # Check if the *current token index 'i'* is a key in our map
+        if i in surgical_perturbations:
+            # Get the inner dict of {latent: delta} pairs for this position
+            latent_deltas = surgical_perturbations[i]
+            for dim, delta in latent_deltas.items():
                 if dim < latent.shape[-1]:
                     latent[0, dim] += delta
+        # --- END MODIFIED LOGIC ---
 
         # 4. DECODE TOKEN (SAE)
-        # Reconstruct token embedding from (potentially perturbed) latent
         recon_token_embedding = sae_model.decode(latent) # (1, D)
         reconstructed_token_embeddings.append(recon_token_embedding.squeeze(0))
 
-    # We now have a list of (L-2) reconstructed token embeddings
     reconstructed_embeddings = torch.stack(reconstructed_token_embeddings).detach()  # (L-2, D)
 
     # 5. DECODE SEQUENCE (ESM LM Head)
     with torch.no_grad():
-        # Pass the (L-2, D) tensor through the LM head to get logits
         logits = esm_model.lm_head(reconstructed_embeddings) # (L-2, vocab_size)
-        
-        # Get the most likely token ID for each position
         predicted_ids = torch.argmax(logits, dim=-1) # (L-2,)
-        
-        # Convert token IDs back to token strings
         predicted_tokens = tokenizer.convert_ids_to_tokens(predicted_ids.tolist())
         
-        # Join tokens into a final sequence, filtering out special tokens
-        # (though they shouldn't be here since we skipped <cls> and <eos>)
         decoded_seq = "".join(
             [tok for tok in predicted_tokens if tok not in {"<cls>", "<eos>", "<pad>", "<mask>"}]
         )
 
     return decoded_seq
+
+# --- 4. Activation Matrix Utility ---
+
+def get_activation_matrix(
+    sequence: str,
+    sae_model: torch.nn.Module,
+    esm_model: EsmForMaskedLM,
+    tokenizer: EsmTokenizer,
+    device: str = "cpu"
+) -> torch.Tensor:
+    """
+    Gets the per-token SAE latent activations for a sequence.
+    
+    Args:
+        sequence: The input protein sequence string.
+        sae_model: The trained SAE model.
+        esm_model: The ESM2 model (must have LM head).
+        tokenizer: The ESM2 tokenizer.
+        device: The device to run on ('cuda' or 'cpu').
+        
+    Returns:
+        A (L-2, 10240) tensor, where L is the sequence length + 2.
+        Each row is the latent activation vector for a single amino acid.
+    """
+    # 1. Get per-token ESM embeddings
+    # token_reps is (L, D), including <cls> and <eos>
+    token_reps, _ = encode_sequence(sequence, esm_model, tokenizer, device=device)
+    L = token_reps.shape[0]
+    
+    # 2. Get real token embeddings (skip <cls> and <eos>)
+    # real_token_reps is (L-2, D)
+    real_token_reps = token_reps[1:-1] 
+    
+    # 3. Pass all token embeddings through the SAE encoder at once
+    with torch.no_grad():
+        activations = sae_model.encode(real_token_reps) # (L-2, 10240)
+        
+    return activations
 

@@ -1,4 +1,5 @@
 # Outputs and checkpoints
+*__pycache__/
 .vscode/
 outputs/
 sae/outputs*/
