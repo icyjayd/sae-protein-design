@@ -39,7 +39,7 @@ def main():
     test_ds = LatentSequenceDataset(test_seqs, sae_model, esm_model, tokenizer, device=str(device))
 
     # --- Get latent dimension ---
-    latent_dim = next(sae_model.parameters()).shape[0] if hasattr(sae_model, "decoder") else 10240
+    latent_dim = sae_model.decoder.in_features if hasattr(sae_model, "decoder") else 10240
     print(f"[INFO] Latent dim: {latent_dim}")
 
     # --- Train model ---
