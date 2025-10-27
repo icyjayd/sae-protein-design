@@ -28,6 +28,39 @@ def load_esm2_model(model_name: str = "facebook/esm2_t6_8M_UR50D", device: str =
     model.eval()
     return model, tokenizer
 
+def load_interplm(esm_name: str, plm_layer: int = 6, device: str = "cpu"):
+    """
+    Loads an InterPLM SAE corresponding to a given ESM backbone name.
+
+    Args:
+        esm_name: str, e.g. "facebook/esm2_t6_8M_UR50D" or "facebook/esm2_t33_650M_UR50D"
+        plm_layer: int, which layer of the PLM to attach the SAE to (default 6)
+        device: torch device
+
+    Returns:
+        sae_model: the loaded InterPLM SAE on the requested device
+    """
+    try:
+        from interplm.sae.inference import load_sae_from_hf
+    except ImportError as e:
+        raise ImportError("InterPLM not found. Install it or ensure it's on PYTHONPATH.") from e
+
+    # Map ESM model names to InterPLM identifiers
+    esm_map = {
+        "facebook/esm2_t6_8M_UR50D": "esm2-8m",
+        "facebook/esm2_t33_650M_UR50D": "esm2-650m",
+    }
+
+    if esm_name not in esm_map:
+        raise ValueError(f"Unsupported ESM model '{esm_name}'. Supported keys: {list(esm_map.keys())}")
+
+    model_id = esm_map[esm_name]
+    print(f"[INFO] Loading InterPLM SAE for {esm_name} (mapped to {model_id}) at layer {plm_layer}...")
+
+    sae_model = load_sae_from_hf(f"{model_id}", plm_layer=plm_layer)
+    sae_model.to(device)
+    sae_model.eval()
+    return sae_model
 
 # --- 2. Encoding ---
 
