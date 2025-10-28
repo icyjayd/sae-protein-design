@@ -1,3 +1,6 @@
+from mod_man_utils import add_module
+add_module("model_scout")
+
 from model_scout.metrics import *
 # from sklearn.metrics import accuracy_score,f1_score,roc_auc_score,r2_score,mean_squared_error,mean_absolute_error
 # from scipy.stats import spearmanr

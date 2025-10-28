@@ -1,3 +1,5 @@
+from mod_man_utils import add_module
+add_module("model_scout")
 from model_scout.encoding import *
 # """
 # Unified sequence encoding utilities with automatic and subset-aware caching.
