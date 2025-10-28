@@ -10,6 +10,8 @@ This file provides the core functions for:
 5. (NEW) Whole-sequence perturbation and decoding
    using the mean activation vector of the sequence.
 """
+from mod_man_utils import add_module
+add_module("interplm")
 
 import torch
 from transformers import EsmTokenizer, EsmForMaskedLM
