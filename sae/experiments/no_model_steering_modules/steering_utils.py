@@ -58,4 +58,6 @@ def reconstruct_and_steer(seq, sae_model, esm_model, tokenizer,
         residues=",".join(map(str,keep))
         seq_steer=perturb_and_decode(seq,sae_model,esm_model,tokenizer,surgical_perturbations=edits,device=device)
         rows.append((seq,seq_recon,seq_steer,residues))
+    if len(rows) == 0:
+        print(f"[DEBUG] No perturbations applied for latent {latent_idx}")
     return pd.DataFrame(rows,columns=["sequence_in","sequence_recon","sequence_steer","residues"])
