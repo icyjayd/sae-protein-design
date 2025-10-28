@@ -17,11 +17,12 @@ def sample_train_test(df, sample_size=10):
     test_df = test_df.sample(sample_size, random_state=42)
     df = pd.concat([train_df, test_df]).reset_index(drop=True)
     return df
+
 def load_data(seq_path, label_path=None):
     if seq_path.endswith(".csv"):
         df = pd.read_csv(seq_path)
         if label_path is None and "label" in df.columns:
-            num_samples = 16
+            num_samples = 100
             print(f"sampling {num_samples} seqs for testing")
             df = sample_train_test(df, sample_size=num_samples)
             seqs = df["sequence"].tolist()

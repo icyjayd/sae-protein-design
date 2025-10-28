@@ -17,6 +17,7 @@ def _spearman_np(y_true, y_pred):
     return float((rt * rp).mean())
 
 def eval_spearman(ridge, encoding, train_x, train_y, test_x, test_y, encoding_cache=None):
+    assert test_y, train_y is not None, "Labels required for evaluation"
     yhat_train = predict_sequences(ridge, list(train_x), encoding, encoding_cache=encoding_cache)
     yhat_test  = predict_sequences(ridge, list(test_x),  encoding, encoding_cache=encoding_cache)
     rho_train = _spearman_np(train_y, yhat_train)
