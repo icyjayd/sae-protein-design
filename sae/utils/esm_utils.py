@@ -189,6 +189,107 @@ def encode_whole_sequence(sequence: str, model, tokenizer, device: str = "cpu", 
     
     return token_reps, pooled
     
+def build_perturbations_from_batch(dZ_batch, threshold=1e-3):
+    """
+    Convert a batch of latent deltas (B x L x D) into a list of
+    surgical perturbation dicts compatible with perturb_and_decode_batch().
+
+    Each element in the output list corresponds to one sequence.
+
+    Args:
+        dZ_batch (torch.Tensor or list[torch.Tensor]):
+            Batched latent deltas (B, L, D) or list of (L, D) tensors.
+        threshold (float):
+            Minimum magnitude to consider a perturbation significant.
+            Smaller edits are ignored for speed and sparsity.
+
+    Returns:
+        List[dict]: Each dict maps position -> {latent_index: delta_value}
+    """
+    if isinstance(dZ_batch, torch.Tensor):
+        dZ_batch = [dZ_batch[i] for i in range(dZ_batch.shape[0])]
+
+    perturbations = []
+    for dZ in dZ_batch:
+        dZ_cpu = dZ.detach().cpu().numpy()
+        edits_dict = {}
+        for i in range(dZ_cpu.shape[0]):  # positions
+            pos_edits = {
+                j: float(v)
+                for j, v in enumerate(dZ_cpu[i])
+                if abs(v) > threshold
+            }
+            if pos_edits:
+                edits_dict[i + 1] = pos_edits  # 1-based indexing
+        perturbations.append(edits_dict)
+    return perturbations
+
+@torch.no_grad()
+def perturb_and_decode_batch(
+    sequences,
+    sae_model,
+    esm_model,
+    tokenizer,
+    surgical_perturbations_list,
+    device="cuda",
+    threshold=1e-3,
+    dtype=torch.float16,
+):
+    """
+    Batched version of perturb_and_decode.
+    Runs all sequences in one GPU forward pass for massive speedups.
+
+    Args:
+        sequences (list[str]): List of amino-acid sequences.
+        sae_model: trained SAE module.
+        esm_model: pretrained ESM model (HF or Facebook).
+        tokenizer: matching tokenizer.
+        surgical_perturbations_list (list[dict]):
+            Same format as single-sample perturbations: [{pos: {latent_idx: val}, ...}, ...]
+        device (str): torch device.
+        threshold (float): magnitude cutoff for which latent edits to apply.
+        dtype (torch.dtype): precision to use (float16 recommended).
+
+    Returns:
+        decoded_sequences (list[str]): one per input sequence.
+    """
+    assert len(sequences) == len(surgical_perturbations_list), "Mismatch between sequences and perturbations."
+
+    # Move models to eval + correct precision
+    sae_model.eval().to(device)
+    esm_model.eval().to(device)
+
+    # Compute activations for all sequences in batch
+    Z_batch = []
+    for seq in sequences:
+        Z = get_activation_matrix(seq, sae_model, esm_model, tokenizer, device=device)
+        Z_batch.append(Z)
+    Z_batch = torch.nn.utils.rnn.pad_sequence(Z_batch, batch_first=True)  # (B, Lmax, D)
+    B, L, D = Z_batch.shape
+
+    # Apply perturbations (per sequence)
+    Zp_batch = Z_batch.clone()
+    for b, perturb in enumerate(surgical_perturbations_list):
+        for pos, latents in perturb.items():
+            if pos < 1 or pos > L:  # safeguard for indexing
+                continue
+            for j, val in latents.items():
+                if abs(val) > threshold and j < D:
+                    Zp_batch[b, pos - 1, j] += val
+
+    # Decode in one go
+    with torch.autocast("cuda", dtype=dtype):
+        decoded_batch = sae_model.decoder(Zp_batch)  # B x L x D_plm
+        # Convert to token logits if your ESM forward supports hidden_states injection
+        # Otherwise, use normal ESM forward on original tokens as before
+        tokens = tokenizer(sequences, return_tensors="pt", padding=True, truncation=True)
+        tokens = {k: v.to(device) for k, v in tokens.items()}
+        logits = esm_model(**tokens)["logits"]  # B x L x Vocab
+
+    # Pick top tokens and detokenize
+    preds = logits.argmax(-1)  # B x L
+    decoded_sequences = tokenizer.batch_decode(preds, skip_special_tokens=True)
+    return decoded_sequences
 
 def perturb_and_decode_whole(
     sequence: str,
