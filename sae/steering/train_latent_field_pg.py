@@ -16,6 +16,7 @@ def train_policy(policy, dataloader, sae_model, esm_model, tokenizer, ridge,
                  device, encoding, m_min, m_max, threshold,
                  entropy_coef, sparse_coef, baseline_beta, epochs, print_every,
                  train_x, train_y, test_x, test_y, eval_every):
+    print("Device:", device)
     opt = torch.optim.Adam(policy.parameters(), lr=1e-3)
     baseline = 0.0
     for epoch in range(epochs):
@@ -24,7 +25,7 @@ def train_policy(policy, dataloader, sae_model, esm_model, tokenizer, ridge,
             seq = seq[0]
             m_val = np.random.uniform(m_min, m_max)
             m = torch.tensor(m_val, dtype=torch.float32, device=device)
-
+    
             Z = get_activation_matrix(seq, sae_model, esm_model, tokenizer, device)
             dZ, dZ_mean, logp, ent = policy.sample(Z, m)
             seq_pert = decode_with_deltas(seq, dZ, sae_model, esm_model, tokenizer, device, threshold)

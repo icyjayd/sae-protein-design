@@ -19,7 +19,7 @@ from typing import Dict, Optional, List, Tuple
 
 # --- 1. Model Loading ---
 
-def load_esm2_model(model_name: str = "facebook/esm2_t6_8M_UR50D", device: str = "cpu"):
+def load_esm2_model(model_name: str = "facebook/esm2_t6_8M_UR50D", device: str = 'cuda' if torch.cuda.is_available() else 'cpu'):
     """
     Loads the ESM model *with LM head* and tokenizer.
     The LM head is essential for decoding token embeddings back to logits.
