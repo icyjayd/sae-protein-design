@@ -1,5 +1,5 @@
 from mod_man_utils import add_module
-add_module("model_scout")
+add_module("model-scout")
 from model_scout.models import *
 
 
